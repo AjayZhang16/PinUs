@@ -14,7 +14,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^1.17.0",
-    "mapbox-gl": "^3.24.0",
+    "@amap/amap-jsapi-loader": "^1.0.1",
     "next": "16.2.7",
     "prisma": "^5.22.0",
     "react": "19.2.4",
@@ -25,7 +25,6 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
-    "@types/mapbox-gl": "^3.4.1",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

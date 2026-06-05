@@ -1,5 +1,12 @@
+// ============================================
+// 打卡 API 路由（带认证）
+// GET  /api/checkins?mapSpaceId=xxx  — 获取打卡列表
+// POST /api/checkins                 — 创建打卡
+// ============================================
+
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getCurrentUser } from "@/lib/auth";
 
 // ============================================
 // GET /api/checkins?mapSpaceId=xxx
@@ -8,6 +15,11 @@ import { prisma } from "@/lib/prisma";
 
 export async function GET(request: Request) {
   try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    }
+
     const { searchParams } = new URL(request.url);
     const mapSpaceId = searchParams.get("mapSpaceId");
 
@@ -45,12 +57,17 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { title, content, longitude, latitude, address, photos, visitedAt, userId, mapSpaceId } = body;
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    }
 
-    if (!title || !longitude || !latitude || !userId || !mapSpaceId) {
+    const body = await request.json();
+    const { title, content, longitude, latitude, address, photos, visitedAt, mapSpaceId } = body;
+
+    if (!title || longitude === undefined || latitude === undefined || !mapSpaceId) {
       return NextResponse.json(
-        { error: "Missing required fields" },
+        { error: "标题、经纬度和地图空间不能为空" },
         { status: 400 }
       );
     }
@@ -64,7 +81,7 @@ export async function POST(request: Request) {
         address: address || null,
         photos: photos || [],
         visitedAt: visitedAt ? new Date(visitedAt) : new Date(),
-        userId,
+        userId: user.userId,
         mapSpaceId,
       },
       include: {

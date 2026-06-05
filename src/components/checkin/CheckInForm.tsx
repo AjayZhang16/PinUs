@@ -1,21 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Camera, X } from "lucide-react";
+import { MapPin, Camera, X, Loader2 } from "lucide-react";
 
 // ============================================
-// 打卡发布对话框
+// 打卡发布对话框（对接 API + 照片上传）
 // ============================================
 
 interface CheckInFormProps {
@@ -38,7 +37,7 @@ export interface CheckInFormData {
   longitude: number;
   latitude: number;
   address: string;
-  photos: string[]; // 暂存 URL，后续对接 S3 存储
+  photos: string[];
   visitedAt: string;
 }
 
@@ -54,6 +53,8 @@ export default function CheckInForm({
   const [content, setContent] = useState("");
   const [addressText, setAddressText] = useState(address);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +73,54 @@ export default function CheckInForm({
 
   const removePhoto = (index: number) => {
     setPhotoUrls((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // 照片上传处理
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    // 最多 9 张照片
+    const remaining = 9 - photoUrls.length;
+    const filesToUpload = Array.from(files).slice(0, remaining);
+
+    if (filesToUpload.length === 0) {
+      alert("最多上传 9 张照片");
+      return;
+    }
+
+    setUploading(true);
+
+    try {
+      const uploadPromises = filesToUpload.map(async (file) => {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          body: formData,
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "上传失败");
+        }
+
+        const data = await res.json();
+        return data.url as string;
+      });
+
+      const urls = await Promise.all(uploadPromises);
+      setPhotoUrls((prev) => [...prev, ...urls]);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "上传失败");
+    } finally {
+      setUploading(false);
+      // 重置 file input，允许重复选同一文件
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
   };
 
   return (
@@ -153,18 +202,38 @@ export default function CheckInForm({
                   </button>
                 </div>
               ))}
-              <button
-                type="button"
-                className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 text-gray-400 transition-colors hover:border-blue-400 hover:text-blue-400"
-              >
-                <div className="text-center">
-                  <Camera className="mx-auto h-6 w-6" />
-                  <span className="text-xs">上传</span>
-                </div>
-              </button>
+              {photoUrls.length < 9 && (
+                <>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp"
+                    multiple
+                    onChange={handleFileChange}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploading}
+                    className="flex h-20 w-20 items-center justify-center rounded-lg border-2 border-dashed border-gray-300 text-gray-400 transition-colors hover:border-blue-400 hover:text-blue-400 disabled:opacity-50"
+                  >
+                    <div className="text-center">
+                      {uploading ? (
+                        <Loader2 className="mx-auto h-6 w-6 animate-spin" />
+                      ) : (
+                        <>
+                          <Camera className="mx-auto h-6 w-6" />
+                          <span className="text-xs">上传</span>
+                        </>
+                      )}
+                    </div>
+                  </button>
+                </>
+              )}
             </div>
             <p className="text-xs text-muted-foreground">
-              照片上传功能将在对接 S3 存储后启用
+              支持 JPG/PNG/GIF/WebP，单张不超过 5MB，最多 9 张
             </p>
           </div>
 
@@ -180,7 +249,7 @@ export default function CheckInForm({
             </Button>
             <Button
               type="submit"
-              disabled={!title.trim() || isSubmitting}
+              disabled={!title.trim() || isSubmitting || uploading}
               className="flex-1"
             >
               {isSubmitting ? "发布中..." : "📍 打卡！"}

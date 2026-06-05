@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-// Mapbox 需要浏览器环境，使用 dynamic import 避免 SSR 问题
+// 高德地图需要浏览器环境，使用 dynamic import 避免 SSR 问题
 const PinUsMap = dynamic(() => import("./PinUsMap"), {
   ssr: false,
   loading: () => (
