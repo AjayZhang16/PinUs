@@ -1,0 +1,91 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// PinUs 数据模型
+// ============================================
+
+/// 用户表
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  avatarUrl String?
+  bio       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 关系
+  ownedMaps    MapSpace[]  @relation("MapOwner")
+  memberships  MapMember[]
+  checkIns     CheckIn[]
+
+  @@map("users")
+}
+
+/// 地图空间 —— 每个用户可以创建多个地图
+model MapSpace {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  coverUrl    String?
+  inviteCode  String   @unique @default(cuid()) // 邀请码
+  isPublic    Boolean  @default(false)           // 是否公开可见
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // 关系
+  ownerId  String       @map("owner_id")
+  owner    User         @relation("MapOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members  MapMember[]
+  checkIns CheckIn[]
+
+  @@map("map_spaces")
+}
+
+/// 地图成员关系
+model MapMember {
+  id   String @id @default(cuid())
+  role String  @default("member") // owner | admin | member
+
+  // 关系
+  userId     String    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mapSpaceId String    @map("map_space_id")
+  mapSpace   MapSpace  @relation(fields: [mapSpaceId], references: [id], onDelete: Cascade)
+  joinedAt   DateTime  @default(now())
+
+  @@unique([userId, mapSpaceId])
+  @@map("map_members")
+}
+
+/// 打卡记录 —— 核心功能
+model CheckIn {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?  @db.Text
+  latitude  Float    // 纬度
+  longitude Float    // 经度
+  address   String?  // 地址文字描述
+  photos    String[] // 照片 URL 数组
+  visitedAt DateTime @default(now()) // 实际到访时间
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // 关系
+  userId     String    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mapSpaceId String    @map("map_space_id")
+  mapSpace   MapSpace  @relation(fields: [mapSpaceId], references: [id], onDelete: Cascade)
+
+  @@map("check_ins")
+}
