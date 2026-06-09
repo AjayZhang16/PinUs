@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     if (error) {
       console.error("Supabase upload error:", error);
       return NextResponse.json(
-        { error: "上传失败" },
+        { error: "上传失败", detail: error.message, code: error.name },
         { status: 500 }
       );
     }
@@ -63,10 +63,10 @@ export async function POST(request: Request) {
     const url = urlData.publicUrl;
 
     return NextResponse.json({ url, fileName }, { status: 201 });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Upload error:", error);
     return NextResponse.json(
-      { error: "上传失败" },
+      { error: "上传失败", detail: error?.message || String(error) },
       { status: 500 }
     );
   }
