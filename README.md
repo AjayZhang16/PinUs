@@ -20,7 +20,7 @@
 
 - 🗺️ **地图打卡** — 在地图上标记你的足迹，支持高德地图中文标注
 - 📝 **日记记录** — 为每次打卡添加文字和照片，留下美好回忆
-- 📸 **照片上传** — 本地存储照片，随时回看
+- 📸 **照片上传** — Supabase Storage 云端存储，随时回看
 - 🔐 **用户认证** — 注册/登录，JWT 身份验证
 - 👥 **地图空间** — 创建专属地图，邀请朋友一起打卡（开发中）
 - 🔗 **邀请码加入** — 分享邀请码，朋友一键加入（开发中）
@@ -38,14 +38,15 @@
 | 数据库 | PostgreSQL 16 | 关系型数据库 |
 | ORM | Prisma 5 | 类型安全的数据库操作 |
 | 认证 | JWT | 无状态身份验证 |
-| 部署 | Docker / Vercel | 灵活的部署方式 |
+| 存储 | Supabase Storage | 云端照片存储 |
+| 部署 | Vercel + Supabase / Docker | 灵活的部署方式 |
 
 ## 🚀 快速开始
 
 ### 前置条件
 
 - [Node.js](https://nodejs.org/) 20+
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)（用于运行 PostgreSQL）
+- [Supabase](https://supabase.com/) 账号（免费套餐即可，提供 PostgreSQL 数据库 + 照片存储）
 - [高德地图 Key](https://lbs.amap.com/)（免费注册获取）
 
 ### 1. 克隆项目
@@ -67,27 +68,34 @@ npm install
 cp .env.example .env
 ```
 
-编辑 `.env` 文件，填入你的高德地图 Key：
+编辑 `.env` 文件，填入你的配置：
 
 ```env
 # 高德地图 Key（从 https://lbs.amap.com/ 注册获取）
 NEXT_PUBLIC_AMAP_KEY="你的高德地图Key"
 NEXT_PUBLIC_AMAP_SECURITY_KEY="你的安全密钥"
+
+# Supabase（从 Supabase Dashboard → Settings → API 获取）
+NEXT_PUBLIC_SUPABASE_URL="https://your-project.supabase.co"
+NEXT_PUBLIC_SUPABASE_ANON_KEY="your-anon-key"
 ```
 
 > 💡 注册高德开放平台 → 创建应用 → 添加 Key → 服务平台选 **"Web端(JS API)"**
 
-### 4. 启动数据库
+### 4. 创建 Supabase 存储桶
 
-```bash
-docker compose up -d db
-```
+在 Supabase Dashboard → Storage → New bucket：
+- 名称填 `photos`
+- 勾选 **Public bucket**
+- 点 Create
 
 ### 5. 初始化数据库
 
 ```bash
 npx prisma db push
 ```
+
+> 💡 数据库由 Supabase 托管，无需本地启动 Docker
 
 ### 6. 启动开发服务器
 
@@ -139,9 +147,9 @@ pinus/
 │   └── lib/
 │       ├── auth.ts            # JWT 认证工具
 │       ├── prisma.ts          # Prisma 客户端
+│       ├── supabase.ts        # Supabase 客户端（照片存储）
 │       └── utils.ts           # 工具函数
 ├── public/
-│   └── uploads/               # 上传照片存储
 ├── .env.example               # 环境变量示例
 ├── docker-compose.yml         # Docker 编排
 ├── Dockerfile                 # Docker 构建
@@ -171,7 +179,7 @@ User ──< MapMember >── MapSpace
 ### M2：能用 🚧
 - [x] 用户注册 / 登录（JWT）
 - [x] 打卡数据写入数据库
-- [x] 照片上传（本地存储）
+- [x] 照片上传（Supabase Storage 云端存储）
 - [ ] 邀请码加入地图空间
 - [ ] 地图空间 CRUD
 

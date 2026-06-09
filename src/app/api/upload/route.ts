@@ -1,12 +1,11 @@
 // ============================================
-// 照片上传 API（本地存储到 public/uploads/）
+// 照片上传 API（上传到 Supabase Storage）
 // POST /api/upload
 // ============================================
 
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { writeFile, mkdir } from "fs/promises";
-import path from "path";
+import { supabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   try {
@@ -33,23 +32,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "只支持 JPG、PNG、GIF、WebP 格式" }, { status: 400 });
     }
 
-    // 生成唯一文件名
+    // 生成唯一文件名（按用户分目录）
     const ext = file.name.split(".").pop() || "jpg";
     const timestamp = Date.now();
     const randomStr = Math.random().toString(36).substring(2, 8);
     const fileName = `${timestamp}-${randomStr}.${ext}`;
+    const filePath = `${user.userId}/${fileName}`; // 按用户 ID 分目录
 
-    // 确保上传目录存在
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    await mkdir(uploadDir, { recursive: true });
+    // 上传到 Supabase Storage
+    const { data, error } = await supabase.storage
+      .from("photos")
+      .upload(filePath, file, {
+        contentType: file.type,
+        upsert: false,
+      });
 
-    // 写入文件
-    const filePath = path.join(uploadDir, fileName);
-    const buffer = Buffer.from(await file.arrayBuffer());
-    await writeFile(filePath, buffer);
+    if (error) {
+      console.error("Supabase upload error:", error);
+      return NextResponse.json(
+        { error: "上传失败" },
+        { status: 500 }
+      );
+    }
 
-    // 返回可访问的 URL
-    const url = `/uploads/${fileName}`;
+    // 获取公开访问 URL
+    const { data: urlData } = supabase.storage
+      .from("photos")
+      .getPublicUrl(data.path);
+
+    const url = urlData.publicUrl;
 
     return NextResponse.json({ url, fileName }, { status: 201 });
   } catch (error) {
