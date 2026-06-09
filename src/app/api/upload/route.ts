@@ -5,7 +5,7 @@
 
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { supabase } from "@/lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 
 export async function POST(request: Request) {
   try {
@@ -40,6 +40,7 @@ export async function POST(request: Request) {
     const filePath = `${user.userId}/${fileName}`; // 按用户 ID 分目录
 
     // 上传到 Supabase Storage
+    const supabase = getSupabase();
     const { data, error } = await supabase.storage
       .from("photos")
       .upload(filePath, file, {
