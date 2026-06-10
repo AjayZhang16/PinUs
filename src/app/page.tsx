@@ -87,6 +87,7 @@ export default function HomePage() {
     lng: number;
     lat: number;
   } | null>(null);
+  const [detailCheckIn, setDetailCheckIn] = useState<CheckInItem | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"timeline" | "members">(
     "timeline"
@@ -884,6 +885,10 @@ export default function HomePage() {
               };
             })}
             onMapClick={handleMapClick}
+            onCardClick={(marker) => {
+              const found = checkIns.find((c) => c.id === marker.id);
+              if (found) setDetailCheckIn(found);
+            }}
             className="h-full w-full"
           />
         ) : (
@@ -957,6 +962,117 @@ export default function HomePage() {
         onClose={() => setShowAuth(false)}
         onSuccess={handleAuthSuccess}
       />
+
+      {/* 打卡详情弹窗 */}
+      {detailCheckIn && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => setDetailCheckIn(null)}
+        >
+          <div
+            className="relative w-full max-w-md max-h-[85vh] overflow-y-auto rounded-2xl bg-white shadow-2xl animate-in fade-in-0 zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 关闭按钮 */}
+            <button
+              className="absolute top-3 right-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-black/10 text-gray-600 hover:bg-black/20 transition-colors"
+              onClick={() => setDetailCheckIn(null)}
+            >
+              <X className="h-4 w-4" />
+            </button>
+
+            {/* 照片 */}
+            {detailCheckIn.photos.length > 0 && (
+              <div className="w-full">
+                {detailCheckIn.photos.length === 1 ? (
+                  <img
+                    src={detailCheckIn.photos[0]}
+                    alt=""
+                    className="w-full max-h-64 object-cover rounded-t-2xl"
+                  />
+                ) : (
+                  <div className={`grid gap-1 rounded-t-2xl overflow-hidden ${
+                    detailCheckIn.photos.length === 2
+                      ? "grid-cols-2"
+                      : detailCheckIn.photos.length === 3
+                      ? "grid-cols-3"
+                      : "grid-cols-2"
+                  }`}>
+                    {detailCheckIn.photos.slice(0, 4).map((url, i) => (
+                      <img
+                        key={i}
+                        src={url}
+                        alt=""
+                        className={`w-full object-cover ${
+                          detailCheckIn.photos.length === 1
+                            ? "max-h-64"
+                            : "h-40"
+                        } ${
+                          i === 0 && detailCheckIn.photos.length >= 4
+                            ? "col-span-1 row-span-2 h-full"
+                            : ""
+                        }`}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 内容区 */}
+            <div className="p-5">
+              {/* 标题 */}
+              <h2 className="text-xl font-bold text-gray-900 mb-2 pr-8">
+                {detailCheckIn.title}
+              </h2>
+
+              {/* 用户 + 时间 + 地址 */}
+              <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+                <Avatar className="h-6 w-6">
+                  {detailCheckIn.user.avatarUrl ? (
+                    <AvatarImage src={detailCheckIn.user.avatarUrl} />
+                  ) : null}
+                  <AvatarFallback className="text-xs bg-blue-100 text-blue-600">
+                    {detailCheckIn.user.name.charAt(0)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="font-medium text-gray-700">{detailCheckIn.user.name}</span>
+                {(() => {
+                  try {
+                    if (detailCheckIn.companions) {
+                      const companions = JSON.parse(detailCheckIn.companions);
+                      if (Array.isArray(companions) && companions.length > 0) {
+                        return (
+                          <span className="text-gray-500">
+                            和 {companions.map((c: {name: string}) => c.name).join("、")} 一起
+                          </span>
+                        );
+                      }
+                    }
+                  } catch { /* ignore */ }
+                  return null;
+                })()}
+                <span className="text-gray-400">·</span>
+                <span>{new Date(detailCheckIn.visitedAt).toLocaleDateString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+              </div>
+
+              {detailCheckIn.address && (
+                <div className="flex items-center gap-1 text-sm text-muted-foreground mb-3">
+                  <MapPin className="h-3.5 w-3.5" />
+                  <span>{detailCheckIn.address}</span>
+                </div>
+              )}
+
+              {/* 正文 */}
+              {detailCheckIn.content && (
+                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">
+                  {detailCheckIn.content}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

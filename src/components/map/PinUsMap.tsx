@@ -35,6 +35,8 @@ interface PinUsMapProps {
   onMapClick?: (lng: number, lat: number) => void;
   /** 点击标记点回调 */
   onMarkerClick?: (marker: MapMarker) => void;
+  /** 点击卡片回调（查看详情） */
+  onCardClick?: (marker: MapMarker) => void;
   /** 容器样式 */
   className?: string;
 }
@@ -52,6 +54,7 @@ export default function PinUsMap({
   initialZoom = 4,
   onMapClick,
   onMarkerClick,
+  onCardClick,
   className = "",
 }: PinUsMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -70,6 +73,8 @@ export default function PinUsMap({
   onMapClickRef.current = onMapClick;
   const onMarkerClickRef = useRef(onMarkerClick);
   onMarkerClickRef.current = onMarkerClick;
+  const onCardClickRef = useRef(onCardClick);
+  onCardClickRef.current = onCardClick;
 
   // 如果没有 key，显示提示界面
   if (!amapKey) {
@@ -228,10 +233,10 @@ function escapeHtml(str: string): string {
 
       const innerEl = cardEl.querySelector(".info-card-inner") as HTMLElement | null;
 
-      // 点击卡片内容区域切换展开/收起（关闭按钮已 stopPropagation，不会触发）
+      // 点击卡片内容区域触发详情弹窗（关闭按钮已 stopPropagation，不会触发）
       cardEl.addEventListener("click", () => {
-        if (innerEl) {
-          innerEl.classList.toggle("info-card-inner--expanded");
+        if (onCardClickRef.current) {
+          onCardClickRef.current(markerData);
         }
       });
 
@@ -385,16 +390,15 @@ function escapeHtml(str: string): string {
           border-radius: 12px;
           padding: 10px 12px;
           box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
-          transition: max-width 0.25s ease, min-width 0.25s ease;
           cursor: pointer;
+          transition: box-shadow 0.15s ease;
+        }
+        .info-card-inner:hover {
+          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
         }
         .info-card-inner--narrow {
           max-width: 150px;
           min-width: 120px;
-        }
-        .info-card-inner--expanded {
-          max-width: 320px;
-          min-width: 260px;
         }
         .info-card-inner::after {
           content: "";
@@ -440,10 +444,6 @@ function escapeHtml(str: string): string {
           text-overflow: ellipsis;
           white-space: nowrap;
         }
-        .info-card-inner--expanded .info-card-title {
-          white-space: normal;
-          overflow: visible;
-        }
         .info-card-user {
           font-size: 12px;
           color: #6b7280;
@@ -451,10 +451,6 @@ function escapeHtml(str: string): string {
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
-        }
-        .info-card-inner--expanded .info-card-user {
-          white-space: normal;
-          overflow: visible;
         }
         .info-card-content {
           font-size: 13px;
@@ -466,10 +462,6 @@ function escapeHtml(str: string): string {
           display: -webkit-box;
           -webkit-line-clamp: 2;
           -webkit-box-orient: vertical;
-        }
-        .info-card-inner--expanded .info-card-content {
-          -webkit-line-clamp: unset;
-          overflow: visible;
         }
         .info-card-photos {
           display: flex;
