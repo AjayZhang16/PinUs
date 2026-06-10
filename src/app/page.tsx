@@ -24,6 +24,8 @@ import {
   UserPlus,
   Trash2,
   Users,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 
 // ============================================
@@ -375,6 +377,16 @@ export default function HomePage() {
           <h1 className="text-lg font-bold">PinUs</h1>
           <p className="text-xs text-muted-foreground">把我们钉在地图上</p>
         </div>
+        {/* 桌面端收起按钮 */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden md:flex h-8 w-8"
+          onClick={() => setSidebarOpen(false)}
+          title="收起侧边栏"
+        >
+          <PanelLeftClose className="h-4 w-4" />
+        </Button>
         {/* 移动端关闭按钮 */}
         <Button
           variant="ghost"
@@ -772,19 +784,18 @@ export default function HomePage() {
 
       {/* 地图主区域 */}
       <main className="relative flex-1 min-w-0">
-        {/* 侧边栏切换按钮（桌面端） */}
-        <Button
-          variant="outline"
-          size="icon"
-          className="hidden md:flex absolute left-4 top-4 z-10 shadow-md bg-white/80 backdrop-blur-sm"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-        >
-          {sidebarOpen ? (
-            <X className="h-4 w-4" />
-          ) : (
-            <Menu className="h-4 w-4" />
-          )}
-        </Button>
+        {/* 侧边栏收起时的展开按钮（桌面端 - 贴边标签） */}
+        {!sidebarOpen && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="hidden md:flex absolute left-0 top-1/2 -translate-y-1/2 z-20 rounded-l-none rounded-r-lg shadow-lg border-l-0 px-2 py-6 h-auto"
+            onClick={() => setSidebarOpen(true)}
+            title="展开侧边栏"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+          </Button>
+        )}
 
         {/* 移动端汉堡按钮（侧边栏关闭时显示） */}
         {!sidebarOpen && (

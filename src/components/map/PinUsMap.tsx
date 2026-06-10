@@ -6,6 +6,7 @@ import AMapLoader from "@amap/amap-jsapi-loader";
 // ============================================
 // PinUs 地图组件
 // 使用高德地图 JS API 2.0 + 中文标注
+// 支持多 info card 同时显示
 // ============================================
 
 interface MapMarker {
@@ -41,7 +42,6 @@ interface PinUsMapProps {
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AMapInstance = any;
 type AMapMarkerInstance = any;
-type AMapInfoWindowInstance = any;
 
 export default function PinUsMap({
   amapKey,
@@ -55,7 +55,9 @@ export default function PinUsMap({
 }: PinUsMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<AMapInstance | null>(null);
-  const markersRef = useRef<AMapMarkerInstance[]>([]);
+  const pinMarkersRef = useRef<AMapMarkerInstance[]>([]);
+  const cardMarkersRef = useRef<Map<string, AMapMarkerInstance>>(new Map());
+  const openCardsRef = useRef<Set<string>>(new Set());
   const AMapRef = useRef<any>(null);
 
   // 用 ref 保存最新的回调，避免闭包过期问题
@@ -87,6 +89,13 @@ export default function PinUsMap({
       </div>
     );
   }
+
+// 转义 HTML 防止 XSS
+function escapeHtml(str: string): string {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
 
   // 初始化地图
   useEffect(() => {
@@ -151,69 +160,160 @@ export default function PinUsMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 更新标记点
-  const updateMarkers = useCallback(() => {
-    if (!map.current || !AMapRef.current) return;
-    const AMap = AMapRef.current;
+  // 创建/更新 info card marker
+  const createOrUpdateInfoCard = useCallback(
+    (markerData: MapMarker, AMap: any, shouldOpen: boolean) => {
+      if (!map.current) return;
 
-    // 清除旧标记
-    markersRef.current.forEach((m: AMapMarkerInstance) => m.setMap(null));
-    markersRef.current = [];
+      const existing = cardMarkersRef.current.get(markerData.id);
 
-    // 添加新标记
-    markers.forEach((markerData) => {
-      // 自定义标记内容
-      const markerContent = document.createElement("div");
-      markerContent.className = "pinus-marker";
-      markerContent.innerHTML = `
-        <div class="marker-pin">
-          <span class="marker-emoji">📍</span>
-        </div>
-      `;
+      if (!shouldOpen) {
+        // 关闭：移除 marker
+        if (existing) {
+          existing.setMap(null);
+          cardMarkersRef.current.delete(markerData.id);
+        }
+        openCardsRef.current.delete(markerData.id);
+        return;
+      }
 
-      const marker = new AMap.Marker({
-        position: new AMap.LngLat(markerData.longitude, markerData.latitude),
-        content: markerContent,
-        anchor: "bottom-center",
-        offset: new AMap.Pixel(0, 0),
-      });
+      // 已打开且已存在，跳过
+      if (existing) return;
 
-      // 信息窗体内容
-      const infoContent = `
-        <div class="marker-popup">
-          <h3 class="marker-popup-title">${markerData.title}</h3>
-          ${markerData.userName ? `<p class="marker-popup-user">👤 ${markerData.userName}</p>` : ""}
-          ${markerData.content ? `<p class="marker-popup-content">${markerData.content}</p>` : ""}
-          ${markerData.photos && markerData.photos.length > 0
-            ? `<div class="marker-popup-photos">
-                ${markerData.photos.slice(0, 3).map((url: string) =>
-                  `<img src="${url}" class="marker-popup-photo" alt="打卡照片" />`
+      // 创建 info card marker（用 AMap.Marker 的自定义内容模拟 infoWindow）
+      const cardEl = document.createElement("div");
+      cardEl.className = "pinus-info-card";
+
+      const photos = markerData.photos || [];
+      const photoCount = Math.min(photos.length, 3);
+
+      // 根据图片数量选择布局 class
+      const photoLayoutClass = photoCount === 1
+        ? "info-card-photos--single"
+        : photoCount === 2
+        ? "info-card-photos--double"
+        : photoCount >= 3
+        ? "info-card-photos--triple"
+        : "";
+
+      cardEl.innerHTML = `
+        <div class="info-card-inner">
+          <button class="info-card-close" data-id="${markerData.id}" title="关闭">×</button>
+          <h3 class="info-card-title">${escapeHtml(markerData.title)}</h3>
+          ${markerData.userName ? `<p class="info-card-user">${escapeHtml(markerData.userName)}</p>` : ""}
+          ${markerData.content ? `<p class="info-card-content">${escapeHtml(markerData.content)}</p>` : ""}
+          ${photoCount > 0
+            ? `<div class="info-card-photos ${photoLayoutClass}">
+                ${photos.slice(0, 3).map((url: string) =>
+                  `<div class="info-card-photo-wrap"><img src="${escapeHtml(url)}" class="info-card-photo" alt="" onload="this.__onPhotoLoad?.()" /></div>`
                 ).join("")}
               </div>`
             : ""}
         </div>
       `;
 
-      const infoWindow = new AMap.InfoWindow({
-        content: infoContent,
-        offset: new AMap.Pixel(0, -36),
-        closeWhenClickMap: true,
+      // 绑定关闭按钮事件
+      const closeBtn = cardEl.querySelector(".info-card-close");
+      if (closeBtn) {
+        closeBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          createOrUpdateInfoCard(markerData, AMap, false);
+        });
+      }
+
+      // 图片加载后根据长宽比自适应
+      const photoWraps = cardEl.querySelectorAll(".info-card-photo-wrap");
+      photoWraps.forEach((wrap) => {
+        const img = wrap.querySelector("img");
+        if (img) {
+          img.onload = () => {
+            const ratio = img.naturalWidth / img.naturalHeight;
+            // 横向图片（>1.2）→ landscape，竖向图片（<0.8）→ portrait，正方形 → square
+            if (ratio > 1.2) {
+              img.classList.add("info-card-photo--landscape");
+              wrap.classList.add("photo-wrap--landscape");
+            } else if (ratio < 0.8) {
+              img.classList.add("info-card-photo--portrait");
+              wrap.classList.add("photo-wrap--portrait");
+            } else {
+              img.classList.add("info-card-photo--square");
+              wrap.classList.add("photo-wrap--square");
+            }
+          };
+        }
       });
 
-      marker.on("click", () => {
-        infoWindow.open(map.current, marker.getPosition());
+      const cardMarker = new AMap.Marker({
+        position: new AMap.LngLat(markerData.longitude, markerData.latitude),
+        content: cardEl,
+        anchor: "bottom-center",
+        offset: new AMap.Pixel(0, -44),
+        zIndex: 200,
+      });
+
+      cardMarker.setMap(map.current);
+      cardMarkersRef.current.set(markerData.id, cardMarker);
+      openCardsRef.current.add(markerData.id);
+    },
+    []
+  );
+
+  // 更新标记点
+  const updateMarkers = useCallback(() => {
+    if (!map.current || !AMapRef.current) return;
+    const AMap = AMapRef.current;
+
+    // 清除旧 pin 标记
+    pinMarkersRef.current.forEach((m: AMapMarkerInstance) => m.setMap(null));
+    pinMarkersRef.current = [];
+
+    // 清除旧的 info card markers（会在下面重新创建应打开的）
+    cardMarkersRef.current.forEach((m) => m.setMap(null));
+    cardMarkersRef.current.clear();
+    openCardsRef.current.clear();
+
+    // 添加新标记
+    markers.forEach((markerData) => {
+      // 1. Pin 标记
+      const pinContent = document.createElement("div");
+      pinContent.className = "pinus-marker";
+      pinContent.innerHTML = `
+        <div class="marker-pin">
+          <span class="marker-emoji">📍</span>
+        </div>
+      `;
+
+      const pinMarker = new AMap.Marker({
+        position: new AMap.LngLat(markerData.longitude, markerData.latitude),
+        content: pinContent,
+        anchor: "bottom-center",
+        offset: new AMap.Pixel(0, 0),
+        zIndex: 100,
+      });
+
+      // 点击 pin 切换 info card
+      pinMarker.on("click", () => {
+        const isOpen = openCardsRef.current.has(markerData.id);
+        createOrUpdateInfoCard(markerData, AMap, !isOpen);
         if (onMarkerClickRef.current) onMarkerClickRef.current(markerData);
       });
 
-      marker.setMap(map.current);
-      markersRef.current.push(marker);
+      pinMarker.setMap(map.current);
+      pinMarkersRef.current.push(pinMarker);
+
+      // 2. Info card 标记（默认打开）
+      createOrUpdateInfoCard(markerData, AMap, true);
     });
 
-    // 自适应所有标记点
+    // 自适应所有标记点（包括 info cards）
     if (markers.length > 0) {
-      map.current.setFitView(markersRef.current, false, [60, 60, 60, 60]);
+      const allMarkers = [
+        ...pinMarkersRef.current,
+        ...Array.from(cardMarkersRef.current.values()),
+      ];
+      map.current.setFitView(allMarkers, false, [80, 80, 80, 80]);
     }
-  }, [markers, onMarkerClick]);
+  }, [markers, createOrUpdateInfoCard]);
 
   useEffect(() => {
     if (map.current) {
@@ -249,42 +349,185 @@ export default function PinUsMap({
           transform: rotate(45deg);
           font-size: 16px;
         }
-        .marker-popup {
-          padding: 4px;
-          min-width: 180px;
+        /* Info Card 样式 */
+        .pinus-info-card {
+          cursor: default;
+          filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.15));
         }
-        .marker-popup-title {
+        .info-card-inner {
+          position: relative;
+          min-width: 200px;
+          max-width: 280px;
+          background: white;
+          border-radius: 12px;
+          padding: 12px 14px;
+          box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+        }
+        .info-card-inner::after {
+          content: "";
+          position: absolute;
+          bottom: -6px;
+          left: 50%;
+          transform: translateX(-50%) rotate(45deg);
+          width: 12px;
+          height: 12px;
+          background: white;
+          box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.06);
+        }
+        .info-card-close {
+          position: absolute;
+          top: 6px;
+          right: 8px;
+          width: 20px;
+          height: 20px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border: none;
+          background: rgba(0, 0, 0, 0.06);
+          border-radius: 50%;
+          font-size: 14px;
+          line-height: 1;
+          color: #6b7280;
+          cursor: pointer;
+          transition: all 0.15s ease;
+          z-index: 10;
+        }
+        .info-card-close:hover {
+          background: rgba(0, 0, 0, 0.12);
+          color: #374151;
+        }
+        .info-card-title {
           font-size: 14px;
           font-weight: 600;
-          margin: 0 0 4px 0;
+          margin: 0 20px 6px 0;
           color: #1f2937;
+          line-height: 1.3;
         }
-        .marker-popup-user {
+        .info-card-user {
           font-size: 12px;
           color: #6b7280;
-          margin: 0 0 4px 0;
+          margin: 0 0 6px 0;
         }
-        .marker-popup-content {
+        .info-card-content {
           font-size: 13px;
           color: #374151;
           margin: 0 0 8px 0;
           line-height: 1.4;
         }
-        .marker-popup-photos {
+        .info-card-photos {
           display: flex;
           gap: 4px;
           flex-wrap: wrap;
+          margin-top: 4px;
         }
-        .marker-popup-photo {
-          width: 72px;
-          height: 72px;
+        /* 单张图片布局：自适应长宽比，宽度撑满 */
+        .info-card-photos--single {
+          display: block;
+        }
+        .info-card-photos--single .info-card-photo-wrap {
+          display: block;
+          border-radius: 8px;
+          overflow: hidden;
+        }
+        .info-card-photos--single .info-card-photo {
+          display: block;
+          width: 100%;
+          height: auto;
+          max-height: 180px;
+          object-fit: cover;
+          border-radius: 8px;
+        }
+        .info-card-photos--single .info-card-photo--landscape {
+          max-height: 140px;
+        }
+        .info-card-photos--single .info-card-photo--portrait {
+          max-height: 180px;
+          max-width: 140px;
+        }
+        .info-card-photos--single .info-card-photo--square {
+          max-height: 160px;
+        }
+        /* 两张图片布局：并排等高 */
+        .info-card-photos--double {
+          display: flex;
+          gap: 4px;
+        }
+        .info-card-photos--double .info-card-photo-wrap {
+          flex: 1;
+          min-width: 0;
+          border-radius: 6px;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f3f4f6;
+          min-height: 80px;
+          max-height: 120px;
+        }
+        .info-card-photos--double .info-card-photo {
+          width: 100%;
+          height: 100%;
+          min-height: 80px;
+          max-height: 120px;
           object-fit: cover;
           border-radius: 6px;
         }
-        .amap-info-content {
-          padding: 12px !important;
-          border-radius: 12px !important;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12) !important;
+        /* 三张图片布局：第一张大图 + 两张小图 */
+        .info-card-photos--triple {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          grid-template-rows: auto auto;
+          gap: 4px;
+        }
+        .info-card-photos--triple .info-card-photo-wrap:first-child {
+          grid-row: 1 / 3;
+          border-radius: 8px;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f3f4f6;
+          min-height: 120px;
+          max-height: 180px;
+        }
+        .info-card-photos--triple .info-card-photo-wrap:first-child .info-card-photo {
+          width: 100%;
+          height: 100%;
+          min-height: 120px;
+          max-height: 180px;
+          object-fit: cover;
+          border-radius: 8px;
+        }
+        .info-card-photos--triple .info-card-photo-wrap:nth-child(2),
+        .info-card-photos--triple .info-card-photo-wrap:nth-child(3) {
+          border-radius: 6px;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: #f3f4f6;
+          min-height: 58px;
+          max-height: 88px;
+        }
+        .info-card-photos--triple .info-card-photo-wrap:nth-child(2) .info-card-photo,
+        .info-card-photos--triple .info-card-photo-wrap:nth-child(3) .info-card-photo {
+          width: 100%;
+          height: 100%;
+          min-height: 58px;
+          max-height: 88px;
+          object-fit: cover;
+          border-radius: 6px;
+        }
+        /* 兜底 */
+        .info-card-photo-wrap {
+          border-radius: 6px;
+          overflow: hidden;
+        }
+        .info-card-photo {
+          display: block;
+          object-fit: cover;
+          border-radius: 6px;
         }
       `}</style>
     </div>
