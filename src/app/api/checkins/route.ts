@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { title, content, longitude, latitude, address, photos, visitedAt, mapSpaceId, companions } = body;
+    const { title, content, longitude, latitude, address, photos, visitedAt, mapSpaceId, companions, color } = body;
 
     if (!title || longitude === undefined || latitude === undefined || !mapSpaceId) {
       return NextResponse.json(
@@ -82,6 +82,7 @@ export async function POST(request: Request) {
         address: address || null,
         photos: photos || [],
         companions: companions && companions.length > 0 ? JSON.stringify(companions) : null,
+        color: color || "#3b82f6",
         visitedAt: visitedAt ? new Date(visitedAt) : new Date(),
         userId: user.userId,
         mapSpaceId,

@@ -48,6 +48,7 @@ interface CheckInItem {
   address?: string | null;
   photos: string[];
   companions?: string | null;
+  color?: string | null;
   visitedAt: string;
   user: {
     id: string;
@@ -882,6 +883,7 @@ export default function HomePage() {
                 userName: c.user.name,
                 photos: c.photos,
                 companions: companionNames,
+                color: c.color || undefined,
               };
             })}
             onMapClick={handleMapClick}
@@ -1028,6 +1030,10 @@ export default function HomePage() {
 
               {/* 用户 + 时间 + 地址 */}
               <div className="flex items-center gap-2 text-sm text-muted-foreground mb-4">
+                <div
+                  className="h-3 w-3 rounded-full flex-shrink-0"
+                  style={{ backgroundColor: detailCheckIn.color || "#3b82f6" }}
+                />
                 <Avatar className="h-6 w-6">
                   {detailCheckIn.user.avatarUrl ? (
                     <AvatarImage src={detailCheckIn.user.avatarUrl} />

@@ -18,6 +18,7 @@ interface MapMarker {
   userName?: string;
   photos?: string[];
   companions?: string[];
+  color?: string;
 }
 
 interface PinUsMapProps {
@@ -194,6 +195,7 @@ function escapeHtml(str: string): string {
       const cardEl = document.createElement("div");
       cardEl.className = "pinus-info-card";
 
+      const cardColor = markerData.color || "#3b82f6";
       const photos = markerData.photos || [];
       const photoCount = Math.min(photos.length, 3);
 
@@ -207,7 +209,7 @@ function escapeHtml(str: string): string {
         : "";
 
       cardEl.innerHTML = `
-        <div class="info-card-inner">
+        <div class="info-card-inner" style="border: 2px solid ${cardColor}; border-radius: 12px;">
           <button class="info-card-close" data-id="${markerData.id}" title="关闭">×</button>
           <h3 class="info-card-title">${escapeHtml(markerData.title)}</h3>
           ${markerData.userName ? `<p class="info-card-user">${escapeHtml(markerData.userName)}${markerData.companions && markerData.companions.length > 0 ? ` 和 ${markerData.companions.map(n => escapeHtml(n)).join("、")} 一起` : ""}</p>` : ""}
@@ -220,6 +222,7 @@ function escapeHtml(str: string): string {
               </div>`
             : ""}
         </div>
+        <div class="info-card-arrow" style="border-top-color: ${cardColor};"></div>
       `;
 
       // 绑定关闭按钮事件
@@ -300,10 +303,11 @@ function escapeHtml(str: string): string {
     // 添加新标记
     markers.forEach((markerData) => {
       // 1. Pin 标记
+      const pinColor = markerData.color || "#3b82f6";
       const pinContent = document.createElement("div");
       pinContent.className = "pinus-marker";
       pinContent.innerHTML = `
-        <div class="marker-pin">
+        <div class="marker-pin" style="background: ${pinColor}; box-shadow: 0 2px 8px ${pinColor}88;">
           <span class="marker-emoji">📍</span>
         </div>
       `;
@@ -400,16 +404,16 @@ function escapeHtml(str: string): string {
           max-width: 150px;
           min-width: 120px;
         }
-        .info-card-inner::after {
-          content: "";
-          position: absolute;
-          bottom: -6px;
-          left: 50%;
-          transform: translateX(-50%) rotate(45deg);
-          width: 12px;
-          height: 12px;
-          background: white;
-          box-shadow: 2px 2px 4px rgba(0, 0, 0, 0.06);
+        .info-card-arrow {
+          width: 0;
+          height: 0;
+          border-left: 7px solid transparent;
+          border-right: 7px solid transparent;
+          border-top: 8px solid #3b82f6;
+          margin: 0 auto;
+          position: relative;
+          top: -1px;
+          filter: drop-shadow(0 2px 2px rgba(0, 0, 0, 0.06));
         }
         .info-card-close {
           position: absolute;

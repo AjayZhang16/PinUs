@@ -55,6 +55,7 @@ export interface CheckInFormData {
   address: string;
   photos: string[];
   companions: CompanionItem[];
+  color: string;
   visitedAt: string;
 }
 
@@ -74,6 +75,21 @@ export default function CheckInForm({
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 颜色选择
+  const presetColors = [
+    "#3b82f6", // 蓝
+    "#ef4444", // 红
+    "#f97316", // 橙
+    "#eab308", // 黄
+    "#22c55e", // 绿
+    "#06b6d4", // 青
+    "#8b5cf6", // 紫
+    "#ec4899", // 粉
+    "#6366f1", // 靛蓝
+    "#78716c", // 灰棕
+  ];
+  const [color, setColor] = useState(presetColors[0]);
 
   // 同伴相关状态
   const [companions, setCompanions] = useState<CompanionItem[]>([]);
@@ -179,6 +195,7 @@ export default function CheckInForm({
       address: addressText.trim(),
       photos: photoUrls,
       companions,
+      color,
       visitedAt: new Date().toISOString(),
     });
   };
@@ -271,6 +288,46 @@ export default function CheckInForm({
               maxLength={50}
               required
             />
+          </div>
+
+          {/* 钉子颜色 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">标记颜色</label>
+            <div className="flex items-center gap-2">
+              {presetColors.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={`h-7 w-7 rounded-full transition-all ${
+                    color === c
+                      ? "ring-2 ring-offset-2 scale-110"
+                      : "hover:scale-105"
+                  }`}
+                  style={{
+                    backgroundColor: c,
+                    boxShadow: color === c ? `0 0 0 2px white, 0 0 0 4px ${c}` : undefined,
+                  }}
+                  title={c}
+                />
+              ))}
+              {/* 自定义颜色输入 */}
+              <div className="relative ml-1">
+                <input
+                  type="color"
+                  value={color}
+                  onChange={(e) => setColor(e.target.value)}
+                  className="h-7 w-7 cursor-pointer rounded-full border-0 p-0 opacity-0 absolute inset-0"
+                  title="自定义颜色"
+                />
+                <div
+                  className="h-7 w-7 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:border-gray-400"
+                  style={{ backgroundColor: presetColors.includes(color) ? 'transparent' : color }}
+                >
+                  <span className="text-xs">+</span>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* 内容 */}

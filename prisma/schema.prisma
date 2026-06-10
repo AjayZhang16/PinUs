@@ -79,6 +79,7 @@ model CheckIn {
   address   String?  // 地址文字描述
   photos    String[] // 照片 URL 数组
   companions String? @db.Text // 同伴信息 JSON: [{userId?, name}]
+  color     String?  @default("#3b82f6") // 钉子颜色（hex）
   visitedAt DateTime @default(now()) // 实际到访时间
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
