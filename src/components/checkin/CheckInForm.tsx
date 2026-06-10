@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,12 +11,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { MapPin, Camera, X, Loader2 } from "lucide-react";
+import { MapPin, Camera, X, Loader2, Users, UserPlus } from "lucide-react";
 import { compressImage } from "@/lib/image-compress";
 
 // ============================================
-// 打卡发布对话框（对接 API + 照片上传）
+// 打卡发布对话框（对接 API + 照片上传 + 同伴选择）
 // ============================================
+
+interface CompanionItem {
+  userId?: string;
+  name: string;
+}
+
+interface MemberOption {
+  userId: string;
+  name: string;
+  avatarUrl?: string | null;
+}
 
 interface CheckInFormProps {
   /** 预填的经纬度 */
@@ -24,6 +35,10 @@ interface CheckInFormProps {
   latitude: number;
   /** 地址文字描述 */
   address?: string;
+  /** 当前空间的成员列表（用于联想） */
+  members?: MemberOption[];
+  /** 当前用户ID（排除自己） */
+  currentUserId?: string;
   /** 提交回调 */
   onSubmit: (data: CheckInFormData) => void;
   /** 取消回调 */
@@ -39,6 +54,7 @@ export interface CheckInFormData {
   latitude: number;
   address: string;
   photos: string[];
+  companions: CompanionItem[];
   visitedAt: string;
 }
 
@@ -46,6 +62,8 @@ export default function CheckInForm({
   longitude,
   latitude,
   address = "",
+  members = [],
+  currentUserId = "",
   onSubmit,
   onCancel,
   isSubmitting = false,
@@ -56,6 +74,98 @@ export default function CheckInForm({
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 同伴相关状态
+  const [companions, setCompanions] = useState<CompanionItem[]>([]);
+  const [companionInput, setCompanionInput] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const companionInputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  // 过滤可选成员：排除自己和已选的
+  const availableMembers = members.filter(
+    (m) =>
+      m.userId !== currentUserId &&
+      !companions.some((c) => c.userId === m.userId)
+  );
+
+  // 根据输入过滤联想列表
+  const filteredMembers = companionInput.trim()
+    ? availableMembers.filter((m) =>
+        m.name.toLowerCase().includes(companionInput.trim().toLowerCase())
+      )
+    : availableMembers;
+
+  // 点击外部关闭下拉
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(e.target as Node) &&
+        companionInputRef.current &&
+        !companionInputRef.current.contains(e.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const addCompanion = (item: CompanionItem) => {
+    // 去重：已有同名或同userId的不重复添加
+    if (item.userId && companions.some((c) => c.userId === item.userId)) return;
+    if (!item.userId && companions.some((c) => !c.userId && c.name === item.name)) return;
+    setCompanions([...companions, item]);
+    setCompanionInput("");
+    setShowSuggestions(false);
+    setHighlightedIndex(-1);
+  };
+
+  const removeCompanion = (index: number) => {
+    setCompanions(companions.filter((_, i) => i !== index));
+  };
+
+  const handleCompanionKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Backspace" && !companionInput && companions.length > 0) {
+      // 空输入时退格删除最后一个同伴
+      removeCompanion(companions.length - 1);
+      return;
+    }
+
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && highlightedIndex < filteredMembers.length) {
+        // 选择高亮的联想项
+        const member = filteredMembers[highlightedIndex];
+        addCompanion({ userId: member.userId, name: member.name });
+      } else if (companionInput.trim()) {
+        // 手动输入的名字
+        addCompanion({ name: companionInput.trim() });
+      }
+      return;
+    }
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightedIndex((prev) =>
+        prev < filteredMembers.length - 1 ? prev + 1 : prev
+      );
+      return;
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : -1));
+      return;
+    }
+
+    if (e.key === "Escape") {
+      setShowSuggestions(false);
+      setHighlightedIndex(-1);
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -68,6 +178,7 @@ export default function CheckInForm({
       latitude,
       address: addressText.trim(),
       photos: photoUrls,
+      companions,
       visitedAt: new Date().toISOString(),
     });
   };
@@ -172,6 +283,109 @@ export default function CheckInForm({
               maxLength={500}
               rows={3}
             />
+          </div>
+
+          {/* 同伴 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium flex items-center gap-1.5">
+              <Users className="h-3.5 w-3.5" />
+              同伴
+            </label>
+            <div className="relative">
+              <div className="flex flex-wrap gap-1.5 rounded-lg border bg-background px-2.5 py-2 text-sm focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 min-h-[40px]">
+                {/* 已选同伴标签 */}
+                {companions.map((c, i) => (
+                  <Badge
+                    key={c.userId || c.name}
+                    variant="secondary"
+                    className="flex items-center gap-1 pr-1 text-xs h-6"
+                  >
+                    {c.name}
+                    <button
+                      type="button"
+                      onClick={() => removeCompanion(i)}
+                      className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5"
+                    >
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </Badge>
+                ))}
+                {/* 输入框 */}
+                <input
+                  ref={companionInputRef}
+                  value={companionInput}
+                  onChange={(e) => {
+                    setCompanionInput(e.target.value);
+                    setShowSuggestions(true);
+                    setHighlightedIndex(-1);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onKeyDown={handleCompanionKeyDown}
+                  placeholder={companions.length === 0 ? "输入名字搜索或添加同伴..." : ""}
+                  className="flex-1 min-w-[120px] outline-none bg-transparent text-sm placeholder:text-muted-foreground"
+                />
+              </div>
+
+              {/* 联想下拉列表 */}
+              {showSuggestions && (filteredMembers.length > 0 || companionInput.trim()) && (
+                <div
+                  ref={suggestionsRef}
+                  className="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border bg-popover p-1 shadow-lg"
+                >
+                  {/* 组内成员联想 */}
+                  {filteredMembers.map((member, i) => (
+                    <button
+                      key={member.userId}
+                      type="button"
+                      className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+                        i === highlightedIndex
+                          ? "bg-blue-50 text-blue-700"
+                          : "hover:bg-muted"
+                      }`}
+                      onClick={() =>
+                        addCompanion({ userId: member.userId, name: member.name })
+                      }
+                    >
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100 text-xs font-medium text-blue-700">
+                        {member.name[0]}
+                      </div>
+                      <span className="flex-1 truncate">{member.name}</span>
+                      <span className="text-xs text-muted-foreground">组内成员</span>
+                    </button>
+                  ))}
+
+                  {/* 手动添加入口（输入了不在列表中的名字时） */}
+                  {companionInput.trim() &&
+                    !filteredMembers.some(
+                      (m) =>
+                        m.name.toLowerCase() ===
+                        companionInput.trim().toLowerCase()
+                    ) && (
+                      <button
+                        type="button"
+                        className={`flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors ${
+                          highlightedIndex === filteredMembers.length
+                            ? "bg-blue-50 text-blue-700"
+                            : "hover:bg-muted"
+                        }`}
+                        onClick={() =>
+                          addCompanion({ name: companionInput.trim() })
+                        }
+                      >
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-gray-100 text-xs">
+                          <UserPlus className="h-3 w-3 text-gray-500" />
+                        </div>
+                        <span>
+                          添加「{companionInput.trim()}」
+                        </span>
+                      </button>
+                    )}
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              输入名字可搜索组内成员，也可直接添加其他同伴
+            </p>
           </div>
 
           {/* 地址 */}

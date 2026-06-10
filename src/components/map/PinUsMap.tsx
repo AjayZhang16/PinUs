@@ -17,6 +17,7 @@ interface MapMarker {
   content?: string;
   userName?: string;
   photos?: string[];
+  companions?: string[];
 }
 
 interface PinUsMapProps {
@@ -204,7 +205,7 @@ function escapeHtml(str: string): string {
         <div class="info-card-inner">
           <button class="info-card-close" data-id="${markerData.id}" title="关闭">×</button>
           <h3 class="info-card-title">${escapeHtml(markerData.title)}</h3>
-          ${markerData.userName ? `<p class="info-card-user">${escapeHtml(markerData.userName)}</p>` : ""}
+          ${markerData.userName ? `<p class="info-card-user">${escapeHtml(markerData.userName)}${markerData.companions && markerData.companions.length > 0 ? ` 和 ${markerData.companions.map(n => escapeHtml(n)).join("、")} 一起` : ""}</p>` : ""}
           ${markerData.content ? `<p class="info-card-content">${escapeHtml(markerData.content)}</p>` : ""}
           ${photoCount > 0
             ? `<div class="info-card-photos ${photoLayoutClass}">
@@ -225,8 +226,18 @@ function escapeHtml(str: string): string {
         });
       }
 
+      const innerEl = cardEl.querySelector(".info-card-inner") as HTMLElement | null;
+
+      // 点击卡片内容区域切换展开/收起（关闭按钮已 stopPropagation，不会触发）
+      cardEl.addEventListener("click", () => {
+        if (innerEl) {
+          innerEl.classList.toggle("info-card-inner--expanded");
+        }
+      });
+
       // 图片加载后根据长宽比自适应
       const photoWraps = cardEl.querySelectorAll(".info-card-photo-wrap");
+      let hasPortrait = false;
       photoWraps.forEach((wrap) => {
         const img = wrap.querySelector("img");
         if (img) {
@@ -239,6 +250,11 @@ function escapeHtml(str: string): string {
             } else if (ratio < 0.8) {
               img.classList.add("info-card-photo--portrait");
               wrap.classList.add("photo-wrap--portrait");
+              hasPortrait = true;
+              // 竖向图片时卡片收窄，减少左右留白
+              if (innerEl && !innerEl.classList.contains("info-card-inner--expanded")) {
+                innerEl.classList.add("info-card-inner--narrow");
+              }
             } else {
               img.classList.add("info-card-photo--square");
               wrap.classList.add("photo-wrap--square");
@@ -369,6 +385,16 @@ function escapeHtml(str: string): string {
           border-radius: 12px;
           padding: 10px 12px;
           box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+          transition: max-width 0.25s ease, min-width 0.25s ease;
+          cursor: pointer;
+        }
+        .info-card-inner--narrow {
+          max-width: 150px;
+          min-width: 120px;
+        }
+        .info-card-inner--expanded {
+          max-width: 320px;
+          min-width: 260px;
         }
         .info-card-inner::after {
           content: "";
@@ -410,17 +436,40 @@ function escapeHtml(str: string): string {
           margin: 0 20px 6px 0;
           color: #1f2937;
           line-height: 1.3;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .info-card-inner--expanded .info-card-title {
+          white-space: normal;
+          overflow: visible;
         }
         .info-card-user {
           font-size: 12px;
           color: #6b7280;
           margin: 0 0 6px 0;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .info-card-inner--expanded .info-card-user {
+          white-space: normal;
+          overflow: visible;
         }
         .info-card-content {
           font-size: 13px;
           color: #374151;
           margin: 0 0 8px 0;
           line-height: 1.4;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          display: -webkit-box;
+          -webkit-line-clamp: 2;
+          -webkit-box-orient: vertical;
+        }
+        .info-card-inner--expanded .info-card-content {
+          -webkit-line-clamp: unset;
+          overflow: visible;
         }
         .info-card-photos {
           display: flex;

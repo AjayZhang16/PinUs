@@ -47,6 +47,7 @@ interface CheckInItem {
   latitude: number;
   address?: string | null;
   photos: string[];
+  companions?: string | null;
   visitedAt: string;
   user: {
     id: string;
@@ -610,6 +611,19 @@ export default function HomePage() {
                           <p className="mt-0.5 text-xs text-muted-foreground">
                             {checkin.user.name}
                             {checkin.address ? ` · ${checkin.address}` : ""}
+                            {/* 同伴显示 */}
+                            {(() => {
+                              try {
+                                if (checkin.companions) {
+                                  const companions = JSON.parse(checkin.companions);
+                                  if (Array.isArray(companions) && companions.length > 0) {
+                                    const names = companions.map((c: {name: string}) => c.name).join("、");
+                                    return ` · 和 ${names} 一起`;
+                                  }
+                                }
+                              } catch { /* ignore */ }
+                              return "";
+                            })()}
                           </p>
                           {checkin.content && (
                             <p className="mt-1 text-sm text-foreground/80 line-clamp-2">
@@ -847,15 +861,28 @@ export default function HomePage() {
           <PinUsMap
             amapKey={amapKey}
             amapSecurityKey={amapSecurityKey}
-            markers={checkIns.map((c) => ({
-              id: c.id,
-              longitude: c.longitude,
-              latitude: c.latitude,
-              title: c.title,
-              content: c.content || undefined,
-              userName: c.user.name,
-              photos: c.photos,
-            }))}
+            markers={checkIns.map((c) => {
+              // 解析 companions JSON
+              let companionNames: string[] = [];
+              try {
+                if (c.companions) {
+                  const parsed = JSON.parse(c.companions);
+                  if (Array.isArray(parsed)) {
+                    companionNames = parsed.map((p: {name: string}) => p.name);
+                  }
+                }
+              } catch { /* ignore */ }
+              return {
+                id: c.id,
+                longitude: c.longitude,
+                latitude: c.latitude,
+                title: c.title,
+                content: c.content || undefined,
+                userName: c.user.name,
+                photos: c.photos,
+                companions: companionNames,
+              };
+            })}
             onMapClick={handleMapClick}
             className="h-full w-full"
           />
@@ -915,6 +942,12 @@ export default function HomePage() {
             setClickLocation(null);
           }}
           isSubmitting={isSubmitting}
+          members={currentSpace?.members.map((m) => ({
+            userId: m.user.id,
+            name: m.user.name,
+            avatarUrl: m.user.avatarUrl,
+          })) || []}
+          currentUserId={user?.id}
         />
       )}
 
