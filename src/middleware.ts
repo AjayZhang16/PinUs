@@ -30,15 +30,13 @@ export function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
-// 匹配所有路径（排除 _next/static 和 _next/image 等静态资源，避免不必要的中间件执行）
+// 匹配所有路径，但排除：
+// - _next/static (静态文件)
+// - _next/image (图片优化)
+// - favicon.ico
+// - /api/* (API 路由，避免中间件对 POST 请求体的潜在干扰)
 export const config = {
   matcher: [
-    /*
-     * 匹配所有路径，但排除：
-     * - _next/static (静态文件)
-     * - _next/image (图片优化)
-     * - favicon.ico
-     */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/).*)",
   ],
 };

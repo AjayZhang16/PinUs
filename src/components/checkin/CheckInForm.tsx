@@ -233,8 +233,14 @@ export default function CheckInForm({
         });
 
         if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "上传失败");
+          let errMsg = `上传失败 (HTTP ${res.status})`;
+          try {
+            const data = await res.json();
+            errMsg = data.detail
+              ? `${data.error}：${data.detail}`
+              : data.error || errMsg;
+          } catch {}
+          throw new Error(errMsg);
         }
 
         const data = await res.json();
