@@ -1,7 +1,8 @@
 // ============================================
 // 打卡 API 路由（带认证）
-// GET  /api/checkins?mapSpaceId=xxx  — 获取打卡列表
-// POST /api/checkins                 — 创建打卡
+// GET    /api/checkins?mapSpaceId=xxx  — 获取打卡列表
+// POST   /api/checkins                 — 创建打卡
+// DELETE /api/checkins?id=xxx          — 删除打卡
 // ============================================
 
 import { NextResponse } from "next/server";
@@ -98,5 +99,47 @@ export async function POST(request: Request) {
       { error: "Failed to create check-in" },
       { status: 500 }
     );
+  }
+}
+
+// ============================================
+// DELETE /api/checkins?id=xxx
+// 删除打卡记录（只能删自己的）
+// ============================================
+
+export async function DELETE(request: Request) {
+  try {
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json({ error: "请先登录" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get("id");
+
+    if (!id) {
+      return NextResponse.json({ error: "缺少打卡ID" }, { status: 400 });
+    }
+
+    // 检查是否是打卡的作者
+    const checkIn = await prisma.checkIn.findUnique({
+      where: { id },
+      select: { userId: true },
+    });
+
+    if (!checkIn) {
+      return NextResponse.json({ error: "打卡记录不存在" }, { status: 404 });
+    }
+
+    if (checkIn.userId !== user.userId) {
+      return NextResponse.json({ error: "只能删除自己的打卡" }, { status: 403 });
+    }
+
+    await prisma.checkIn.delete({ where: { id } });
+
+    return NextResponse.json({ message: "删除成功" });
+  } catch (error) {
+    console.error("Failed to delete check-in:", error);
+    return NextResponse.json({ error: "删除失败" }, { status: 500 });
   }
 }

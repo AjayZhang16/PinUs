@@ -22,7 +22,13 @@ export async function GET(request: Request) {
         },
         include: {
           owner: { select: { id: true, name: true, avatarUrl: true } },
-          members: { select: { userId: true, role: true } },
+          members: {
+            select: {
+              userId: true,
+              role: true,
+              user: { select: { id: true, name: true, avatarUrl: true } },
+            },
+          },
           _count: { select: { checkIns: true, members: true } },
         },
         orderBy: { updatedAt: "desc" },

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { MapPin, Camera, X, Loader2 } from "lucide-react";
+import { compressImage } from "@/lib/image-compress";
 
 // ============================================
 // 打卡发布对话框（对接 API + 照片上传）
@@ -93,8 +94,10 @@ export default function CheckInForm({
 
     try {
       const uploadPromises = filesToUpload.map(async (file) => {
+        // 压缩图片后再上传（节省 Supabase 1GB 存储空间）
+        const compressed = await compressImage(file);
         const formData = new FormData();
-        formData.append("file", file);
+        formData.append("file", compressed, file.name.replace(/\.[^.]+$/, ".jpg"));
 
         const res = await fetch("/api/upload", {
           method: "POST",
