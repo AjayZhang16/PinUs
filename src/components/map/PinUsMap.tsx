@@ -59,6 +59,10 @@ export default function PinUsMap({
   const cardMarkersRef = useRef<Map<string, AMapMarkerInstance>>(new Map());
   const openCardsRef = useRef<Set<string>>(new Set());
   const AMapRef = useRef<any>(null);
+  // 记录上一批 marker IDs，只在真正变化时才 setFitView
+  const prevMarkerIdsRef = useRef<string>("");
+  // 标记是否是首次加载（首次才自动 fitView）
+  const isFirstFitRef = useRef(true);
 
   // 用 ref 保存最新的回调，避免闭包过期问题
   const onMapClickRef = useRef(onMapClick);
@@ -305,13 +309,16 @@ function escapeHtml(str: string): string {
       createOrUpdateInfoCard(markerData, AMap, true);
     });
 
-    // 自适应所有标记点（包括 info cards）
-    if (markers.length > 0) {
+    // 只在 marker IDs 真正变化或首次加载时才 setFitView
+    const currentIds = markers.map((m) => m.id).sort().join(",");
+    if (markers.length > 0 && (isFirstFitRef.current || currentIds !== prevMarkerIdsRef.current)) {
       const allMarkers = [
         ...pinMarkersRef.current,
         ...Array.from(cardMarkersRef.current.values()),
       ];
       map.current.setFitView(allMarkers, false, [80, 80, 80, 80]);
+      isFirstFitRef.current = false;
+      prevMarkerIdsRef.current = currentIds;
     }
   }, [markers, createOrUpdateInfoCard]);
 
@@ -356,11 +363,11 @@ function escapeHtml(str: string): string {
         }
         .info-card-inner {
           position: relative;
-          min-width: 200px;
-          max-width: 280px;
+          min-width: 180px;
+          max-width: 240px;
           background: white;
           border-radius: 12px;
-          padding: 12px 14px;
+          padding: 10px 12px;
           box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
         }
         .info-card-inner::after {
@@ -420,38 +427,46 @@ function escapeHtml(str: string): string {
           gap: 4px;
           flex-wrap: wrap;
           margin-top: 4px;
+          /* 整个照片区域最大高度限制 */
+          max-height: 120px;
+          overflow: hidden;
+          border-radius: 8px;
         }
-        /* 单张图片布局：自适应长宽比，宽度撑满 */
+        /* 单张图片布局：严格控制尺寸 */
         .info-card-photos--single {
           display: block;
+          max-height: 120px;
         }
         .info-card-photos--single .info-card-photo-wrap {
           display: block;
           border-radius: 8px;
           overflow: hidden;
+          max-height: 120px;
         }
         .info-card-photos--single .info-card-photo {
           display: block;
           width: 100%;
-          height: auto;
-          max-height: 180px;
+          height: 120px;
           object-fit: cover;
           border-radius: 8px;
         }
         .info-card-photos--single .info-card-photo--landscape {
-          max-height: 140px;
+          height: 100px;
         }
         .info-card-photos--single .info-card-photo--portrait {
-          max-height: 180px;
-          max-width: 140px;
+          height: 120px;
+          width: auto;
+          max-width: 120px;
+          margin: 0 auto;
         }
         .info-card-photos--single .info-card-photo--square {
-          max-height: 160px;
+          height: 110px;
         }
-        /* 两张图片布局：并排等高 */
+        /* 两张图片布局：并排等高，紧凑 */
         .info-card-photos--double {
           display: flex;
           gap: 4px;
+          max-height: 90px;
         }
         .info-card-photos--double .info-card-photo-wrap {
           flex: 1;
@@ -462,23 +477,22 @@ function escapeHtml(str: string): string {
           align-items: center;
           justify-content: center;
           background: #f3f4f6;
-          min-height: 80px;
-          max-height: 120px;
+          height: 90px;
         }
         .info-card-photos--double .info-card-photo {
           width: 100%;
-          height: 100%;
-          min-height: 80px;
-          max-height: 120px;
+          height: 90px;
           object-fit: cover;
           border-radius: 6px;
         }
-        /* 三张图片布局：第一张大图 + 两张小图 */
+        /* 三张图片布局：第一张大图 + 两张小图，紧凑 */
         .info-card-photos--triple {
           display: grid;
           grid-template-columns: 1fr 1fr;
-          grid-template-rows: auto auto;
-          gap: 4px;
+          grid-template-rows: 1fr 1fr;
+          gap: 3px;
+          max-height: 120px;
+          height: 120px;
         }
         .info-card-photos--triple .info-card-photo-wrap:first-child {
           grid-row: 1 / 3;
@@ -488,14 +502,10 @@ function escapeHtml(str: string): string {
           align-items: center;
           justify-content: center;
           background: #f3f4f6;
-          min-height: 120px;
-          max-height: 180px;
         }
         .info-card-photos--triple .info-card-photo-wrap:first-child .info-card-photo {
           width: 100%;
           height: 100%;
-          min-height: 120px;
-          max-height: 180px;
           object-fit: cover;
           border-radius: 8px;
         }
@@ -507,15 +517,11 @@ function escapeHtml(str: string): string {
           align-items: center;
           justify-content: center;
           background: #f3f4f6;
-          min-height: 58px;
-          max-height: 88px;
         }
         .info-card-photos--triple .info-card-photo-wrap:nth-child(2) .info-card-photo,
         .info-card-photos--triple .info-card-photo-wrap:nth-child(3) .info-card-photo {
           width: 100%;
           height: 100%;
-          min-height: 58px;
-          max-height: 88px;
           object-fit: cover;
           border-radius: 6px;
         }

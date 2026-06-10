@@ -156,6 +156,16 @@ export default function HomePage() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // 侧边栏切换时通知地图 resize（保持当前缩放和中心不变）
+  useEffect(() => {
+    // 等 CSS 动画结束后 resize，否则尺寸不准
+    const timer = setTimeout(() => {
+      // 触发 window resize 事件，高德地图会自动监听并调整
+      window.dispatchEvent(new Event("resize"));
+    }, 350); // duration-300 + 50ms buffer
+    return () => clearTimeout(timer);
+  }, [sidebarOpen]);
+
   // ============================================
   // 数据加载
   // ============================================
