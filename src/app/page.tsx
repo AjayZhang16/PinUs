@@ -28,6 +28,8 @@ import {
   PanelLeftOpen,
   Map as MapIcon,
   Layers,
+  Navigation,
+  Loader2,
 } from "lucide-react";
 import type { MapViewMode } from "@/components/map/PinUsMap";
 
@@ -124,7 +126,7 @@ export default function HomePage() {
     null
   );
   const [flyToTarget, setFlyToTarget] = useState<{
-    id: string;
+    id?: string;
     longitude: number;
     latitude: number;
     seq: number;
@@ -132,6 +134,12 @@ export default function HomePage() {
 
   // 地图视图：2D 平面 / 3D 倾斜
   const [mapViewMode, setMapViewMode] = useState<MapViewMode>("2D");
+
+  // 定位到当前位置
+  const [locateTrigger, setLocateTrigger] = useState<{ seq: number } | null>(
+    null
+  );
+  const [isLocating, setIsLocating] = useState(false);
 
   const amapKey = process.env.NEXT_PUBLIC_AMAP_KEY || "";
   const amapSecurityKey = process.env.NEXT_PUBLIC_AMAP_SECURITY_KEY || "";
@@ -268,16 +276,22 @@ export default function HomePage() {
   // 打卡处理
   // ============================================
 
+  const openCheckInAt = useCallback((lng: number, lat: number) => {
+    setHighlightedCheckInId(null);
+    setFlyToTarget({ longitude: lng, latitude: lat, seq: Date.now() });
+    setClickLocation({ lng, lat });
+    setShowCheckIn(true);
+  }, []);
+
   const handleMapClick = useCallback(
     (lng: number, lat: number) => {
       if (!user) {
         setShowAuth(true);
         return;
       }
-      setClickLocation({ lng, lat });
-      setShowCheckIn(true);
+      openCheckInAt(lng, lat);
     },
-    [user]
+    [user, openCheckInAt]
   );
 
   const handleCheckInSubmit = useCallback(
@@ -803,8 +817,7 @@ export default function HomePage() {
           <Button
             className="w-full gap-2"
             onClick={() => {
-              setClickLocation({ lng: 116.3974, lat: 39.9087 });
-              setShowCheckIn(true);
+              openCheckInAt(116.3974, 39.9087);
               // 移动端关闭侧边栏
               if (window.innerWidth < 768) setSidebarOpen(false);
             }}
@@ -881,13 +894,27 @@ export default function HomePage() {
             : "🗺️ 登录后点击地图即可打卡"}
         </div>
 
-        {/* 地图 2D / 3D 切换 */}
+        {/* 定位 + 地图 2D / 3D 切换 */}
         {amapKey && (
           <div
-            className={`absolute z-10 right-6 ${
+            className={`absolute z-10 right-6 flex items-center gap-2 ${
               user && mapSpaceId ? "bottom-24 md:bottom-6" : "bottom-6"
             }`}
           >
+            <button
+              type="button"
+              onClick={() => setLocateTrigger({ seq: Date.now() })}
+              disabled={isLocating}
+              className="flex items-center gap-1.5 rounded-lg border bg-white/90 px-3 py-2 text-xs font-medium text-gray-600 shadow-md backdrop-blur-sm transition-colors hover:bg-gray-50 disabled:opacity-60"
+              title="定位到当前位置"
+            >
+              {isLocating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Navigation className="h-3.5 w-3.5" />
+              )}
+              定位
+            </button>
             <div className="flex rounded-lg border bg-white/90 p-1 shadow-md backdrop-blur-sm">
               <button
                 type="button"
@@ -925,10 +952,7 @@ export default function HomePage() {
             <Button
               size="lg"
               className="h-14 w-14 rounded-full shadow-xl bg-blue-500 hover:bg-blue-600 text-white"
-              onClick={() => {
-                setClickLocation({ lng: 116.3974, lat: 39.9087 });
-                setShowCheckIn(true);
-              }}
+              onClick={() => openCheckInAt(116.3974, 39.9087)}
             >
               <Plus className="h-6 w-6" />
             </Button>
@@ -970,6 +994,8 @@ export default function HomePage() {
             }}
             flyToTarget={flyToTarget}
             viewMode={mapViewMode}
+            locateTrigger={locateTrigger}
+            onLocateStatusChange={setIsLocating}
             className="h-full w-full"
           />
         ) : (

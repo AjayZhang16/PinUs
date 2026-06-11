@@ -44,13 +44,17 @@ interface PinUsMapProps {
   onCardClick?: (marker: MapMarker) => void;
   /** 外部触发地图飞到指定打卡点 */
   flyToTarget?: {
-    id: string;
+    id?: string;
     longitude: number;
     latitude: number;
     seq: number;
   } | null;
   /** 地图视图模式：2D 平面 / 3D 倾斜 */
   viewMode?: MapViewMode;
+  /** 外部触发定位到当前位置 */
+  locateTrigger?: { seq: number } | null;
+  /** 定位进行中状态回调 */
+  onLocateStatusChange?: (locating: boolean) => void;
   /** 容器样式 */
   className?: string;
 }
@@ -71,6 +75,8 @@ export default function PinUsMap({
   onCardClick,
   flyToTarget,
   viewMode = "2D",
+  locateTrigger,
+  onLocateStatusChange,
   className = "",
 }: PinUsMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -93,11 +99,44 @@ export default function PinUsMap({
   onCardClickRef.current = onCardClick;
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
+  const geolocationRef = useRef<any>(null);
+  const userLocationMarkerRef = useRef<AMapMarkerInstance | null>(null);
+  const lastLocateSeqRef = useRef<number | null>(null);
+  const onLocateStatusChangeRef = useRef(onLocateStatusChange);
+  onLocateStatusChangeRef.current = onLocateStatusChange;
 
   // 地图始终以 3D 模式初始化，通过 pitch 切换平面/倾斜（避免 setViewMode 运行时切换崩溃）
   const applyViewMode = useCallback((mode: MapViewMode) => {
     if (!map.current) return;
     map.current.setPitch(mode === "3D" ? MAP_PITCH_3D : 0);
+  }, []);
+
+  const flyToLocation = useCallback(
+    (lng: number, lat: number) => {
+      if (!map.current) return;
+      const targetZoom = Math.max(map.current.getZoom(), 15);
+      map.current.setZoomAndCenter(targetZoom, [lng, lat], false, 500);
+      setTimeout(() => applyViewMode(viewModeRef.current), 520);
+    },
+    [applyViewMode]
+  );
+
+  const showUserLocation = useCallback((lng: number, lat: number, AMap: any) => {
+    if (!map.current) return;
+    if (userLocationMarkerRef.current) {
+      userLocationMarkerRef.current.setMap(null);
+    }
+    userLocationMarkerRef.current = new AMap.CircleMarker({
+      center: new AMap.LngLat(lng, lat),
+      radius: 10,
+      strokeColor: "#ffffff",
+      strokeWeight: 2,
+      strokeOpacity: 1,
+      fillColor: "#3b82f6",
+      fillOpacity: 0.95,
+      zIndex: 300,
+    });
+    userLocationMarkerRef.current.setMap(map.current);
   }, []);
 
   // 如果没有 key，显示提示界面
@@ -183,6 +222,14 @@ function escapeHtml(str: string): string {
         }
       });
 
+      geolocationRef.current = new AMap.Geolocation({
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+        convert: true,
+        showButton: false,
+      });
+
       map.current = mapInstance;
     }).catch((e: Error) => {
       console.error("高德地图加载失败:", e);
@@ -190,6 +237,9 @@ function escapeHtml(str: string): string {
 
     return () => {
       isMounted = false;
+      userLocationMarkerRef.current?.setMap(null);
+      userLocationMarkerRef.current = null;
+      geolocationRef.current = null;
       map.current?.destroy();
       map.current = null;
     };
@@ -383,15 +433,20 @@ function escapeHtml(str: string): string {
 
   const createOrUpdateInfoCardRef = useRef(createOrUpdateInfoCard);
   createOrUpdateInfoCardRef.current = createOrUpdateInfoCard;
+  const markersRef = useRef(markers);
+  markersRef.current = markers;
+  const lastFlownSeqRef = useRef<number | null>(null);
 
   // 切换 2D / 3D 视图
   useEffect(() => {
     applyViewMode(viewMode);
   }, [viewMode, applyViewMode]);
 
-  // 侧边栏点击打卡时，地图飞到对应位置
+  // 侧边栏点击打卡时，地图飞到对应位置（仅 seq 变化时触发，避免 markers 更新后重复飞向旧目标）
   useEffect(() => {
     if (!flyToTarget || !map.current || !AMapRef.current) return;
+    if (lastFlownSeqRef.current === flyToTarget.seq) return;
+    lastFlownSeqRef.current = flyToTarget.seq;
 
     const AMap = AMapRef.current;
     const { longitude, latitude, id } = flyToTarget;
@@ -407,11 +462,85 @@ function escapeHtml(str: string): string {
     // setZoomAndCenter 会重置俯仰角，动画结束后恢复 3D 倾斜
     setTimeout(() => applyViewMode(viewModeRef.current), 520);
 
-    const markerData = markers.find((m) => m.id === id);
-    if (markerData) {
-      createOrUpdateInfoCardRef.current(markerData, AMap, true);
+    if (id) {
+      const markerData = markersRef.current.find((m) => m.id === id);
+      if (markerData) {
+        createOrUpdateInfoCardRef.current(markerData, AMap, true);
+      }
     }
-  }, [flyToTarget, markers, applyViewMode]);
+  }, [flyToTarget, applyViewMode]);
+
+  // 清除定位目标后允许下次相同 seq 重新触发（一般不会复用 seq）
+  useEffect(() => {
+    if (!flyToTarget) {
+      lastFlownSeqRef.current = null;
+    }
+  }, [flyToTarget]);
+
+  const flyToLocationRef = useRef(flyToLocation);
+  flyToLocationRef.current = flyToLocation;
+  const showUserLocationRef = useRef(showUserLocation);
+  showUserLocationRef.current = showUserLocation;
+
+  // 定位到当前位置
+  useEffect(() => {
+    if (!locateTrigger || !map.current || !AMapRef.current) return;
+    if (lastLocateSeqRef.current === locateTrigger.seq) return;
+    lastLocateSeqRef.current = locateTrigger.seq;
+
+    const AMap = AMapRef.current;
+    const setLocating = (v: boolean) => onLocateStatusChangeRef.current?.(v);
+
+    const handleSuccess = (lng: number, lat: number) => {
+      flyToLocationRef.current(lng, lat);
+      showUserLocationRef.current(lng, lat, AMap);
+      setLocating(false);
+    };
+
+    const tryBrowserGeolocation = () => {
+      if (!navigator.geolocation) {
+        setLocating(false);
+        alert("定位失败：浏览器不支持定位功能");
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const { longitude, latitude } = pos.coords;
+          if (AMap.convertFrom) {
+            AMap.convertFrom([longitude, latitude], "gps", (status: string, result: any) => {
+              if (status === "complete" && result.locations?.[0]) {
+                const loc = result.locations[0];
+                handleSuccess(loc.lng, loc.lat);
+              } else {
+                handleSuccess(longitude, latitude);
+              }
+            });
+          } else {
+            handleSuccess(longitude, latitude);
+          }
+        },
+        () => {
+          setLocating(false);
+          alert("定位失败，请允许浏览器访问您的位置");
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+      );
+    };
+
+    setLocating(true);
+
+    if (geolocationRef.current) {
+      geolocationRef.current.getCurrentPosition((status: string, result: any) => {
+        if (status === "complete" && result.position) {
+          handleSuccess(result.position.lng, result.position.lat);
+        } else {
+          tryBrowserGeolocation();
+        }
+      });
+    } else {
+      tryBrowserGeolocation();
+    }
+  }, [locateTrigger]);
 
   return (
     <div className={`relative ${className}`}>
