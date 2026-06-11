@@ -94,15 +94,10 @@ export default function PinUsMap({
   const viewModeRef = useRef(viewMode);
   viewModeRef.current = viewMode;
 
+  // 地图始终以 3D 模式初始化，通过 pitch 切换平面/倾斜（避免 setViewMode 运行时切换崩溃）
   const applyViewMode = useCallback((mode: MapViewMode) => {
     if (!map.current) return;
-    if (mode === "3D") {
-      map.current.setViewMode("3D");
-      map.current.setPitch(MAP_PITCH_3D);
-    } else {
-      map.current.setPitch(0);
-      map.current.setViewMode("2D");
-    }
+    map.current.setPitch(mode === "3D" ? MAP_PITCH_3D : 0);
   }, []);
 
   // 如果没有 key，显示提示界面
@@ -165,9 +160,11 @@ function escapeHtml(str: string): string {
       const mapInstance = new AMap.Map(mapContainer.current, {
         center: initialCenter,
         zoom: initialZoom,
-        viewMode: "2D",        // 2D 视图（国内最流畅）
-        mapStyle: "amap://styles/normal",  // 标准样式
-        features: ["bg", "road", "building", "point"], // 显示要素
+        viewMode: "3D",
+        pitch: 0,
+        pitchEnable: true,
+        mapStyle: "amap://styles/normal",
+        features: ["bg", "road", "building", "point"],
       });
 
       // 添加控件
