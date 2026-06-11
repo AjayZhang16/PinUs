@@ -26,7 +26,10 @@ import {
   Users,
   PanelLeftClose,
   PanelLeftOpen,
+  Map as MapIcon,
+  Layers,
 } from "lucide-react";
+import type { MapViewMode } from "@/components/map/PinUsMap";
 
 // ============================================
 // 类型定义
@@ -115,6 +118,20 @@ export default function HomePage() {
 
   // 删除打卡
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // 侧边栏选中打卡 + 地图定位
+  const [highlightedCheckInId, setHighlightedCheckInId] = useState<string | null>(
+    null
+  );
+  const [flyToTarget, setFlyToTarget] = useState<{
+    id: string;
+    longitude: number;
+    latitude: number;
+    seq: number;
+  } | null>(null);
+
+  // 地图视图：2D 平面 / 3D 倾斜
+  const [mapViewMode, setMapViewMode] = useState<MapViewMode>("2D");
 
   const amapKey = process.env.NEXT_PUBLIC_AMAP_KEY || "";
   const amapSecurityKey = process.env.NEXT_PUBLIC_AMAP_SECURITY_KEY || "";
@@ -294,6 +311,23 @@ export default function HomePage() {
     },
     [mapSpaceId]
   );
+
+  // ============================================
+  // 侧边栏打卡定位
+  // ============================================
+
+  const handleTimelineCheckInClick = (checkin: CheckInItem) => {
+    setHighlightedCheckInId(checkin.id);
+    setFlyToTarget({
+      id: checkin.id,
+      longitude: checkin.longitude,
+      latitude: checkin.latitude,
+      seq: Date.now(),
+    });
+    if (window.innerWidth < 768) {
+      setSidebarOpen(false);
+    }
+  };
 
   // ============================================
   // 删除打卡
@@ -580,7 +614,12 @@ export default function HomePage() {
                 checkIns.map((checkin) => (
                   <Card
                     key={checkin.id}
-                    className="cursor-pointer transition-shadow hover:shadow-md"
+                    className={`cursor-pointer transition-shadow hover:shadow-md ${
+                      highlightedCheckInId === checkin.id
+                        ? "ring-2 ring-blue-500 shadow-md"
+                        : ""
+                    }`}
+                    onClick={() => handleTimelineCheckInClick(checkin)}
                   >
                     <CardContent className="p-3">
                       <div className="flex items-start gap-3">
@@ -842,6 +881,44 @@ export default function HomePage() {
             : "🗺️ 登录后点击地图即可打卡"}
         </div>
 
+        {/* 地图 2D / 3D 切换 */}
+        {amapKey && (
+          <div
+            className={`absolute z-10 right-6 ${
+              user && mapSpaceId ? "bottom-24 md:bottom-6" : "bottom-6"
+            }`}
+          >
+            <div className="flex rounded-lg border bg-white/90 p-1 shadow-md backdrop-blur-sm">
+              <button
+                type="button"
+                onClick={() => setMapViewMode("2D")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  mapViewMode === "2D"
+                    ? "bg-blue-500 text-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-100"
+                }`}
+                title="平面视图"
+              >
+                <MapIcon className="h-3.5 w-3.5" />
+                平面
+              </button>
+              <button
+                type="button"
+                onClick={() => setMapViewMode("3D")}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  mapViewMode === "3D"
+                    ? "bg-blue-500 text-white shadow-sm"
+                    : "text-gray-600 hover:bg-gray-100"
+                }`}
+                title="倾斜视图"
+              >
+                <Layers className="h-3.5 w-3.5" />
+                倾斜
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* 移动端浮动打卡按钮 */}
         {user && mapSpaceId && (
           <div className="md:hidden absolute bottom-6 right-6 z-10">
@@ -891,6 +968,8 @@ export default function HomePage() {
               const found = checkIns.find((c) => c.id === marker.id);
               if (found) setDetailCheckIn(found);
             }}
+            flyToTarget={flyToTarget}
+            viewMode={mapViewMode}
             className="h-full w-full"
           />
         ) : (

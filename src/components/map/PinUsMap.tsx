@@ -9,6 +9,10 @@ import AMapLoader from "@amap/amap-jsapi-loader";
 // 支持多 info card 同时显示
 // ============================================
 
+export type MapViewMode = "2D" | "3D";
+
+const MAP_PITCH_3D = 50;
+
 interface MapMarker {
   id: string;
   longitude: number;
@@ -38,6 +42,15 @@ interface PinUsMapProps {
   onMarkerClick?: (marker: MapMarker) => void;
   /** 点击卡片回调（查看详情） */
   onCardClick?: (marker: MapMarker) => void;
+  /** 外部触发地图飞到指定打卡点 */
+  flyToTarget?: {
+    id: string;
+    longitude: number;
+    latitude: number;
+    seq: number;
+  } | null;
+  /** 地图视图模式：2D 平面 / 3D 倾斜 */
+  viewMode?: MapViewMode;
   /** 容器样式 */
   className?: string;
 }
@@ -56,6 +69,8 @@ export default function PinUsMap({
   onMapClick,
   onMarkerClick,
   onCardClick,
+  flyToTarget,
+  viewMode = "2D",
   className = "",
 }: PinUsMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -76,6 +91,19 @@ export default function PinUsMap({
   onMarkerClickRef.current = onMarkerClick;
   const onCardClickRef = useRef(onCardClick);
   onCardClickRef.current = onCardClick;
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+
+  const applyViewMode = useCallback((mode: MapViewMode) => {
+    if (!map.current) return;
+    if (mode === "3D") {
+      map.current.setViewMode("3D");
+      map.current.setPitch(MAP_PITCH_3D);
+    } else {
+      map.current.setPitch(0);
+      map.current.setViewMode("2D");
+    }
+  }, []);
 
   // 如果没有 key，显示提示界面
   if (!amapKey) {
@@ -342,16 +370,51 @@ function escapeHtml(str: string): string {
         ...Array.from(cardMarkersRef.current.values()),
       ];
       map.current.setFitView(allMarkers, false, [80, 80, 80, 80]);
+      if (viewModeRef.current === "3D") {
+        setTimeout(() => applyViewMode("3D"), 100);
+      }
       isFirstFitRef.current = false;
       prevMarkerIdsRef.current = currentIds;
     }
-  }, [markers, createOrUpdateInfoCard]);
+  }, [markers, createOrUpdateInfoCard, applyViewMode]);
 
   useEffect(() => {
     if (map.current) {
       updateMarkers();
     }
   }, [updateMarkers]);
+
+  const createOrUpdateInfoCardRef = useRef(createOrUpdateInfoCard);
+  createOrUpdateInfoCardRef.current = createOrUpdateInfoCard;
+
+  // 切换 2D / 3D 视图
+  useEffect(() => {
+    applyViewMode(viewMode);
+  }, [viewMode, applyViewMode]);
+
+  // 侧边栏点击打卡时，地图飞到对应位置
+  useEffect(() => {
+    if (!flyToTarget || !map.current || !AMapRef.current) return;
+
+    const AMap = AMapRef.current;
+    const { longitude, latitude, id } = flyToTarget;
+    const targetZoom = Math.max(map.current.getZoom(), 14);
+
+    map.current.setZoomAndCenter(
+      targetZoom,
+      [longitude, latitude],
+      false,
+      500
+    );
+
+    // setZoomAndCenter 会重置俯仰角，动画结束后恢复 3D 倾斜
+    setTimeout(() => applyViewMode(viewModeRef.current), 520);
+
+    const markerData = markers.find((m) => m.id === id);
+    if (markerData) {
+      createOrUpdateInfoCardRef.current(markerData, AMap, true);
+    }
+  }, [flyToTarget, markers, applyViewMode]);
 
   return (
     <div className={`relative ${className}`}>
