@@ -13,6 +13,21 @@ export type MapViewMode = "2D" | "3D";
 
 const MAP_PITCH_3D = 50;
 
+export interface MapRoutePoint {
+  id: string;
+  longitude: number;
+  latitude: number;
+  label?: string;
+  sortOrder: number;
+}
+
+export interface MapRoute {
+  id: string;
+  name: string;
+  color: string;
+  points: MapRoutePoint[];
+}
+
 interface MapMarker {
   id: string;
   longitude: number;
@@ -55,6 +70,12 @@ interface PinUsMapProps {
   locateTrigger?: { seq: number } | null;
   /** 定位进行中状态回调 */
   onLocateStatusChange?: (locating: boolean) => void;
+  /** 已保存的旅游路线 */
+  routes?: MapRoute[];
+  /** 高亮显示的路线 ID */
+  highlightedRouteId?: string | null;
+  /** 规划中的路线草稿点 */
+  draftRoutePoints?: MapRoutePoint[];
   /** 容器样式 */
   className?: string;
 }
@@ -77,6 +98,9 @@ export default function PinUsMap({
   viewMode = "2D",
   locateTrigger,
   onLocateStatusChange,
+  routes = [],
+  highlightedRouteId = null,
+  draftRoutePoints = [],
   className = "",
 }: PinUsMapProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
@@ -84,6 +108,10 @@ export default function PinUsMap({
   const pinMarkersRef = useRef<AMapMarkerInstance[]>([]);
   const cardMarkersRef = useRef<Map<string, AMapMarkerInstance>>(new Map());
   const openCardsRef = useRef<Set<string>>(new Set());
+  const routePolylinesRef = useRef<AMapMarkerInstance[]>([]);
+  const routeMarkersRef = useRef<AMapMarkerInstance[]>([]);
+  const draftPolylineRef = useRef<AMapMarkerInstance | null>(null);
+  const draftMarkersRef = useRef<AMapMarkerInstance[]>([]);
   const AMapRef = useRef<any>(null);
   // 记录上一批 marker IDs，只在真正变化时才 setFitView
   const prevMarkerIdsRef = useRef<string>("");
@@ -170,6 +198,46 @@ function escapeHtml(str: string): string {
   return div.innerHTML;
 }
 
+function getRoutePointRole(index: number, total: number): "start" | "end" | "waypoint" {
+  if (index === 0) return "start";
+  if (index === total - 1) return "end";
+  return "waypoint";
+}
+
+function getRoutePointColor(role: "start" | "end" | "waypoint"): string {
+  if (role === "start") return "#22c55e";
+  if (role === "end") return "#ef4444";
+  return "#f59e0b";
+}
+
+function getRoutePointText(index: number, total: number): string {
+  const role = getRoutePointRole(index, total);
+  if (role === "start") return "起";
+  if (role === "end") return "终";
+  return String(index);
+}
+
+function createRoutePointMarker(
+  AMap: any,
+  lng: number,
+  lat: number,
+  text: string,
+  color: string,
+  zIndex: number
+) {
+  const el = document.createElement("div");
+  el.className = "pinus-route-point";
+  el.innerHTML = `<div class="route-point-badge" style="background:${color}">${escapeHtml(text)}</div>`;
+  const marker = new AMap.Marker({
+    position: new AMap.LngLat(lng, lat),
+    content: el,
+    anchor: "center",
+    offset: new AMap.Pixel(0, 0),
+    zIndex,
+  });
+  return marker;
+}
+
   // 初始化地图
   useEffect(() => {
     if (!mapContainer.current || map.current) return;
@@ -240,6 +308,10 @@ function escapeHtml(str: string): string {
       userLocationMarkerRef.current?.setMap(null);
       userLocationMarkerRef.current = null;
       geolocationRef.current = null;
+      routePolylinesRef.current.forEach((p) => p.setMap(null));
+      routeMarkersRef.current.forEach((m) => m.setMap(null));
+      draftPolylineRef.current?.setMap(null);
+      draftMarkersRef.current.forEach((m) => m.setMap(null));
       map.current?.destroy();
       map.current = null;
     };
@@ -431,6 +503,119 @@ function escapeHtml(str: string): string {
     }
   }, [updateMarkers]);
 
+  const updateRoutes = useCallback(() => {
+    if (!map.current || !AMapRef.current) return;
+    const AMap = AMapRef.current;
+
+    routePolylinesRef.current.forEach((p) => p.setMap(null));
+    routePolylinesRef.current = [];
+    routeMarkersRef.current.forEach((m) => m.setMap(null));
+    routeMarkersRef.current = [];
+    if (draftPolylineRef.current) {
+      draftPolylineRef.current.setMap(null);
+      draftPolylineRef.current = null;
+    }
+    draftMarkersRef.current.forEach((m) => m.setMap(null));
+    draftMarkersRef.current = [];
+
+    const renderRoute = (route: MapRoute, dimmed: boolean) => {
+      if (route.points.length < 2) return;
+      const path = route.points.map(
+        (p) => new AMap.LngLat(p.longitude, p.latitude)
+      );
+      const polyline = new AMap.Polyline({
+        path,
+        strokeColor: route.color,
+        strokeWeight: dimmed ? 4 : 6,
+        strokeOpacity: dimmed ? 0.35 : 0.9,
+        lineJoin: "round",
+        zIndex: dimmed ? 40 : 80,
+      });
+      polyline.setMap(map.current);
+      routePolylinesRef.current.push(polyline);
+
+      route.points.forEach((p, i) => {
+        const role = getRoutePointRole(i, route.points.length);
+        const marker = createRoutePointMarker(
+          AMap,
+          p.longitude,
+          p.latitude,
+          getRoutePointText(i, route.points.length),
+          getRoutePointColor(role),
+          dimmed ? 90 : 120
+        );
+        marker.setMap(map.current);
+        routeMarkersRef.current.push(marker);
+      });
+    };
+
+    const hasHighlight = !!highlightedRouteId;
+    routes.forEach((route) => {
+      const isHighlighted = route.id === highlightedRouteId;
+      renderRoute(route, hasHighlight && !isHighlighted);
+    });
+
+    if (draftRoutePoints.length > 0) {
+      draftRoutePoints.forEach((p, i) => {
+        const role = getRoutePointRole(i, draftRoutePoints.length);
+        const marker = createRoutePointMarker(
+          AMap,
+          p.longitude,
+          p.latitude,
+          getRoutePointText(i, draftRoutePoints.length),
+          getRoutePointColor(role),
+          150
+        );
+        marker.setMap(map.current);
+        draftMarkersRef.current.push(marker);
+      });
+
+      if (draftRoutePoints.length >= 2) {
+        const path = draftRoutePoints.map(
+          (p) => new AMap.LngLat(p.longitude, p.latitude)
+        );
+        draftPolylineRef.current = new AMap.Polyline({
+          path,
+          strokeColor: "#8b5cf6",
+          strokeWeight: 5,
+          strokeOpacity: 0.85,
+          strokeStyle: "dashed",
+          lineJoin: "round",
+          zIndex: 100,
+        });
+        draftPolylineRef.current.setMap(map.current);
+      }
+    }
+  }, [routes, highlightedRouteId, draftRoutePoints]);
+
+  useEffect(() => {
+    if (map.current) updateRoutes();
+  }, [updateRoutes]);
+
+  const prevHighlightedRouteRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!map.current || !highlightedRouteId) return;
+    if (prevHighlightedRouteRef.current === highlightedRouteId) return;
+    prevHighlightedRouteRef.current = highlightedRouteId;
+
+    const route = routes.find((r) => r.id === highlightedRouteId);
+    if (!route || route.points.length === 0) return;
+
+    const overlays = [...routePolylinesRef.current, ...routeMarkersRef.current];
+    if (overlays.length > 0) {
+      map.current.setFitView(overlays, false, [80, 80, 80, 80]);
+      if (viewModeRef.current === "3D") {
+        setTimeout(() => applyViewMode("3D"), 100);
+      }
+    }
+  }, [highlightedRouteId, routes, applyViewMode]);
+
+  useEffect(() => {
+    if (!highlightedRouteId) {
+      prevHighlightedRouteRef.current = null;
+    }
+  }, [highlightedRouteId]);
+
   const createOrUpdateInfoCardRef = useRef(createOrUpdateInfoCard);
   createOrUpdateInfoCardRef.current = createOrUpdateInfoCard;
   const markersRef = useRef(markers);
@@ -569,6 +754,23 @@ function escapeHtml(str: string): string {
         .marker-emoji {
           transform: rotate(45deg);
           font-size: 16px;
+        }
+        .pinus-route-point {
+          cursor: default;
+        }
+        .route-point-badge {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 26px;
+          height: 26px;
+          padding: 0 6px;
+          border-radius: 13px;
+          color: white;
+          font-size: 12px;
+          font-weight: 700;
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+          border: 2px solid white;
         }
         /* Info Card 样式 */
         .pinus-info-card {

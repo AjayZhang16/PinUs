@@ -29,6 +29,7 @@ model User {
   ownedMaps    MapSpace[]  @relation("MapOwner")
   memberships  MapMember[]
   checkIns     CheckIn[]
+  travelRoutes TravelRoute[]
 
   @@map("users")
 }
@@ -49,6 +50,7 @@ model MapSpace {
   owner    User         @relation("MapOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   members  MapMember[]
   checkIns CheckIn[]
+  travelRoutes TravelRoute[]
 
   @@map("map_spaces")
 }
@@ -91,4 +93,38 @@ model CheckIn {
   mapSpace   MapSpace  @relation(fields: [mapSpaceId], references: [id], onDelete: Cascade)
 
   @@map("check_ins")
+}
+
+/// 旅游路线
+model TravelRoute {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  shareCode   String   @unique @default(cuid())
+  color       String   @default("#8b5cf6")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId     String @map("user_id")
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mapSpaceId String @map("map_space_id")
+  mapSpace   MapSpace @relation(fields: [mapSpaceId], references: [id], onDelete: Cascade)
+  points     RoutePoint[]
+
+  @@map("travel_routes")
+}
+
+/// 路线途经点（按 sortOrder 排序，首点为起点，末点为终点）
+model RoutePoint {
+  id        String  @id @default(cuid())
+  label     String?
+  latitude  Float
+  longitude Float
+  address   String?
+  sortOrder Int     @map("sort_order")
+
+  routeId String      @map("route_id")
+  route   TravelRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  @@map("route_points")
 }

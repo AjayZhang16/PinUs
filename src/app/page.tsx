@@ -32,6 +32,11 @@ import {
   Loader2,
 } from "lucide-react";
 import type { MapViewMode } from "@/components/map/PinUsMap";
+import RoutePanel, {
+  type TravelRouteItem,
+  type DraftRoutePoint,
+} from "@/components/routes/RoutePanel";
+import RouteImportDialog from "@/components/routes/RouteImportDialog";
 
 // ============================================
 // 类型定义
@@ -95,7 +100,7 @@ export default function HomePage() {
   } | null>(null);
   const [detailCheckIn, setDetailCheckIn] = useState<CheckInItem | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"timeline" | "members">(
+  const [activeTab, setActiveTab] = useState<"timeline" | "routes" | "members">(
     "timeline"
   );
 
@@ -141,6 +146,17 @@ export default function HomePage() {
   );
   const [isLocating, setIsLocating] = useState(false);
 
+  // 旅游路线
+  const [routes, setRoutes] = useState<TravelRouteItem[]>([]);
+  const [routesLoading, setRoutesLoading] = useState(false);
+  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [routePlanningMode, setRoutePlanningMode] = useState(false);
+  const [draftRoutePoints, setDraftRoutePoints] = useState<DraftRoutePoint[]>(
+    []
+  );
+  const [isSavingRoute, setIsSavingRoute] = useState(false);
+  const [showRouteImport, setShowRouteImport] = useState(false);
+
   const amapKey = process.env.NEXT_PUBLIC_AMAP_KEY || "";
   const amapSecurityKey = process.env.NEXT_PUBLIC_AMAP_SECURITY_KEY || "";
 
@@ -158,8 +174,16 @@ export default function HomePage() {
   useEffect(() => {
     if (mapSpaceId) {
       loadCheckIns();
+      loadRoutes();
     }
   }, [mapSpaceId]);
+
+  useEffect(() => {
+    if (activeTab !== "routes") {
+      setRoutePlanningMode(false);
+      setDraftRoutePoints([]);
+    }
+  }, [activeTab]);
 
   // 桌面端默认展开侧边栏
   useEffect(() => {
@@ -232,6 +256,21 @@ export default function HomePage() {
     }
   };
 
+  const loadRoutes = async () => {
+    if (!mapSpaceId) return;
+    setRoutesLoading(true);
+    try {
+      const res = await fetch(`/api/routes?mapSpaceId=${mapSpaceId}`);
+      if (res.ok) {
+        setRoutes(await res.json());
+      }
+    } catch (error) {
+      console.error("Failed to load routes:", error);
+    } finally {
+      setRoutesLoading(false);
+    }
+  };
+
   const loadMapSpaces = async () => {
     if (!user) return;
     try {
@@ -289,9 +328,22 @@ export default function HomePage() {
         setShowAuth(true);
         return;
       }
+      if (routePlanningMode) {
+        setDraftRoutePoints((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            longitude: lng,
+            latitude: lat,
+          },
+        ]);
+        setFlyToTarget({ longitude: lng, latitude: lat, seq: Date.now() });
+        if (window.innerWidth < 768) setSidebarOpen(false);
+        return;
+      }
       openCheckInAt(lng, lat);
     },
-    [user, openCheckInAt]
+    [user, routePlanningMode, openCheckInAt]
   );
 
   const handleCheckInSubmit = useCallback(
@@ -332,6 +384,7 @@ export default function HomePage() {
 
   const handleTimelineCheckInClick = (checkin: CheckInItem) => {
     setHighlightedCheckInId(checkin.id);
+    setSelectedRouteId(null);
     setFlyToTarget({
       id: checkin.id,
       longitude: checkin.longitude,
@@ -341,6 +394,74 @@ export default function HomePage() {
     if (window.innerWidth < 768) {
       setSidebarOpen(false);
     }
+  };
+
+  // ============================================
+  // 旅游路线
+  // ============================================
+
+  const handleSaveRoute = async (name: string) => {
+    if (!mapSpaceId || draftRoutePoints.length < 2) return;
+    setIsSavingRoute(true);
+    try {
+      const res = await fetch("/api/routes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          mapSpaceId,
+          points: draftRoutePoints.map((p) => ({
+            latitude: p.latitude,
+            longitude: p.longitude,
+            label: p.label,
+          })),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "保存失败");
+        return;
+      }
+      setRoutePlanningMode(false);
+      setDraftRoutePoints([]);
+      await loadRoutes();
+      setActiveTab("routes");
+    } catch {
+      alert("网络错误");
+    } finally {
+      setIsSavingRoute(false);
+    }
+  };
+
+  const handleDeleteRoute = async (id: string) => {
+    try {
+      const res = await fetch(`/api/routes?id=${id}`, { method: "DELETE" });
+      if (res.ok) {
+        if (selectedRouteId === id) setSelectedRouteId(null);
+        setRoutes((prev) => prev.filter((r) => r.id !== id));
+      } else {
+        const data = await res.json();
+        alert(data.error || "删除失败");
+      }
+    } catch {
+      alert("网络错误");
+    }
+  };
+
+  const handleImportRoute = async (shareCode: string) => {
+    if (!mapSpaceId) throw new Error("请先选择地图空间");
+    const res = await fetch("/api/routes/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shareCode, mapSpaceId }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "导入失败");
+    }
+    await loadRoutes();
+    setSelectedRouteId(data.id);
+    setActiveTab("routes");
   };
 
   // ============================================
@@ -587,7 +708,7 @@ export default function HomePage() {
         <div className="flex border-b">
           <button
             onClick={() => setActiveTab("timeline")}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex-1 px-2 py-2.5 text-xs sm:text-sm font-medium transition-colors ${
               activeTab === "timeline"
                 ? "border-b-2 border-blue-500 text-blue-600"
                 : "text-muted-foreground hover:text-foreground"
@@ -596,8 +717,18 @@ export default function HomePage() {
             📋 时间线
           </button>
           <button
+            onClick={() => setActiveTab("routes")}
+            className={`flex-1 px-2 py-2.5 text-xs sm:text-sm font-medium transition-colors ${
+              activeTab === "routes"
+                ? "border-b-2 border-violet-500 text-violet-600"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            🛤️ 路线
+          </button>
+          <button
             onClick={() => setActiveTab("members")}
-            className={`flex-1 px-4 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex-1 px-2 py-2.5 text-xs sm:text-sm font-medium transition-colors ${
               activeTab === "members"
                 ? "border-b-2 border-blue-500 text-blue-600"
                 : "text-muted-foreground hover:text-foreground"
@@ -728,6 +859,36 @@ export default function HomePage() {
                 ))
               )}
             </div>
+          ) : activeTab === "routes" ? (
+            <RoutePanel
+              routes={routes}
+              isLoading={routesLoading}
+              currentUserId={user.id}
+              selectedRouteId={selectedRouteId}
+              planningMode={routePlanningMode}
+              draftPoints={draftRoutePoints}
+              isSaving={isSavingRoute}
+              onSelectRoute={(id) => {
+                setSelectedRouteId(id);
+                setHighlightedCheckInId(null);
+              }}
+              onStartPlanning={() => {
+                setRoutePlanningMode(true);
+                setDraftRoutePoints([]);
+                setSelectedRouteId(null);
+                if (window.innerWidth < 768) setSidebarOpen(false);
+              }}
+              onCancelPlanning={() => {
+                setRoutePlanningMode(false);
+                setDraftRoutePoints([]);
+              }}
+              onRemoveDraftPoint={(id) =>
+                setDraftRoutePoints((prev) => prev.filter((p) => p.id !== id))
+              }
+              onSaveRoute={handleSaveRoute}
+              onDeleteRoute={handleDeleteRoute}
+              onShowImport={() => setShowRouteImport(true)}
+            />
           ) : (
             /* 成员列表 */
             <div className="space-y-2">
@@ -889,7 +1050,9 @@ export default function HomePage() {
 
         {/* 地图提示 */}
         <div className="absolute bottom-24 md:bottom-6 left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-sm text-white shadow-lg backdrop-blur-sm whitespace-nowrap">
-          {user
+          {routePlanningMode
+            ? "🛤️ 点击地图添加路线途径点"
+            : user
             ? "🗺️ 点击地图任意位置即可打卡"
             : "🗺️ 登录后点击地图即可打卡"}
         </div>
@@ -947,7 +1110,7 @@ export default function HomePage() {
         )}
 
         {/* 移动端浮动打卡按钮 */}
-        {user && mapSpaceId && (
+        {user && mapSpaceId && !routePlanningMode && (
           <div className="md:hidden absolute bottom-6 right-6 z-10">
             <Button
               size="lg"
@@ -996,6 +1159,26 @@ export default function HomePage() {
             viewMode={mapViewMode}
             locateTrigger={locateTrigger}
             onLocateStatusChange={setIsLocating}
+            routes={routes.map((r) => ({
+              id: r.id,
+              name: r.name,
+              color: r.color,
+              points: r.points.map((p) => ({
+                id: p.id,
+                longitude: p.longitude,
+                latitude: p.latitude,
+                label: p.label || undefined,
+                sortOrder: p.sortOrder,
+              })),
+            }))}
+            highlightedRouteId={selectedRouteId}
+            draftRoutePoints={draftRoutePoints.map((p, i) => ({
+              id: p.id,
+              longitude: p.longitude,
+              latitude: p.latitude,
+              label: p.label,
+              sortOrder: i,
+            }))}
             className="h-full w-full"
           />
         ) : (
@@ -1068,6 +1251,12 @@ export default function HomePage() {
         open={showAuth}
         onClose={() => setShowAuth(false)}
         onSuccess={handleAuthSuccess}
+      />
+
+      <RouteImportDialog
+        open={showRouteImport}
+        onClose={() => setShowRouteImport(false)}
+        onImport={handleImportRoute}
       />
 
       {/* 打卡详情弹窗 */}
